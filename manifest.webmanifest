@@ -1,0 +1,16 @@
+{
+  "name": "La Maddalena · Gelato Lab",
+  "short_name": "Gelato Lab",
+  "description": "Receitas e balanceamento de gelato artesanal premium — La Maddalena, Porto de Galinhas",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#faf7f2",
+  "theme_color": "#0e7a5f",
+  "lang": "pt-BR",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
