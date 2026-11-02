@@ -421,6 +421,14 @@ h2.sect { font-family: var(--serif); font-size: 15px; font-weight: 600; letter-s
 .fb-det[open] > summary::before { content: '－ '; }
 .fb-det p { color: var(--ink2); line-height: 1.55; margin: 0 0 9px; }
 
+/* nota do insumo na receita: fechada por padrão, abre ao tocar em "nota" */
+details.ing-obs { margin-top: 2px; }
+details.ing-obs > summary { cursor: pointer; list-style: none; display: inline-block; font-size: 12px; color: var(--ink3); padding: 2px 0; }
+details.ing-obs > summary::-webkit-details-marker { display: none; }
+details.ing-obs > summary::before { content: '＋ '; }
+details.ing-obs[open] > summary::before { content: '－ '; }
+details.ing-obs > span { display: block; margin-top: 2px; }
+
 /* ---------- aba VENDAS (relatório da maquininha) — só classes vd-* ---------- */
 .vd-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(104px, 1fr)); gap: 9px; }
 .vd-metric { background: var(--bg2); border-radius: 11px; padding: 9px 11px; }
