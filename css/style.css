@@ -421,6 +421,16 @@ h2.sect { font-family: var(--serif); font-size: 15px; font-weight: 600; letter-s
 .fb-det[open] > summary::before { content: '－ '; }
 .fb-det p { color: var(--ink2); line-height: 1.55; margin: 0 0 9px; }
 
+/* estoque de insumos (subaba de Insumos) */
+.est-row { padding: 12px 14px; margin-bottom: 8px; }
+.est-top { display: flex; align-items: baseline; gap: 10px; }
+.est-nome { flex: 1; font-weight: 600; }
+.est-qtd { font-size: 20px; font-weight: 800; white-space: nowrap; }
+.est-qtd small { font-size: 13px; font-weight: 600; color: var(--ink2); }
+.est-bot { display: flex; align-items: center; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
+.est-bot > .muted { flex: 1; }
+.est-acoes { display: flex; gap: 6px; }
+
 /* nota do insumo na receita: fechada por padrão, abre ao tocar em "nota" */
 details.ing-obs { margin-top: 2px; }
 details.ing-obs > summary { cursor: pointer; list-style: none; display: inline-block; font-size: 12px; color: var(--ink3); padding: 2px 0; }
