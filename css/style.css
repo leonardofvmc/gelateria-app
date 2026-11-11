@@ -430,6 +430,10 @@ h2.sect { font-family: var(--serif); font-size: 15px; font-weight: 600; letter-s
 .est-bot { display: flex; align-items: center; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
 .est-bot > .muted { flex: 1; }
 .est-acoes { display: flex; gap: 6px; }
+.est-sug { margin-bottom: 8px; }
+.est-sug button { display: block; width: 100%; text-align: left; padding: 10px 12px; margin-bottom: 4px;
+  background: var(--bg); border: 1px solid var(--line); border-radius: 10px; font: inherit; color: inherit; cursor: pointer; }
+.est-sug button:active { background: var(--line); }
 
 /* nota do insumo na receita: fechada por padrão, abre ao tocar em "nota" */
 details.ing-obs { margin-top: 2px; }
