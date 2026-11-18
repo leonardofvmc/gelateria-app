@@ -1,5 +1,5 @@
 /* Service worker â€” cache offline do app shell (network-first: atualiza quando online) */
-const CACHE = 'lamaddalena-t198';
+const CACHE = 'lamaddalena-t199';
 const FILES = [
   './',
   './index.html',
