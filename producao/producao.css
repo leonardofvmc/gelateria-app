@@ -1,0 +1,37 @@
+/* Complemento do style.css do app: só o que a página de produção precisa a mais */
+
+/* sem barra de abas embaixo, então sobra menos espaço no rodapé */
+body { padding-bottom: calc(28px + env(safe-area-inset-bottom)); }
+html, body { overflow-x: hidden; }
+
+/* lembretes operacionais — caixa âmbar, igual ao PDF de produção */
+.lembrete {
+  background: #FFEDB3; border: 2px solid #E8870E; border-radius: var(--r);
+  color: #5A3800; font-weight: 700; padding: 12px 14px; margin-bottom: 13px;
+}
+.lembrete h3 {
+  margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: .06em;
+  color: inherit; font-weight: 800;
+}
+.lembrete ul { list-style: none; margin: 0; padding: 0; }
+.lembrete li { position: relative; padding-left: 22px; margin: 0 0 6px; line-height: 1.38; font-size: 15px; }
+.lembrete li:last-child { margin-bottom: 0; }
+.lembrete li::before { content: '⚠'; position: absolute; left: 0; top: 0; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .lembrete { background: var(--warnbg); border-color: var(--accent); color: var(--warn); }
+}
+:root[data-theme="dark"] .lembrete { background: var(--warnbg); border-color: var(--accent); color: var(--warn); }
+
+.erro { color: var(--bad); font-weight: 600; font-size: 14px; margin: 2px 0 10px; min-height: 1px; }
+.lembrar { display: flex; align-items: center; gap: 10px; font-size: 14.5px; margin: 2px 0 14px; cursor: pointer; }
+.lembrar input { width: 20px; height: 20px; accent-color: var(--brand); flex: none; }
+.btn.full { width: 100%; }
+.btn[disabled] { opacity: .65; cursor: default; }
+
+/* nomes longos de ingrediente quebram em vez de empurrar a tabela para fora da tela */
+.ix td { overflow-wrap: anywhere; }
+.ix td.v { overflow-wrap: normal; }
+.ing-feito .tag, .ing-feito .muted { text-decoration: none; }
+.seg button { line-height: 1.25; }
+/* rótulos que quebram em duas linhas não desalinham os dois campos de lote */
+.card .grid2 { align-items: end; }
