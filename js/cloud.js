@@ -279,7 +279,10 @@ window.CLOUD = (function () {
       const v = src[id] || {};
       if (!id || typeof v.visivel !== 'boolean') continue;
       receitas[id] = { visivel: v.visivel, nome: typeof v.nome === 'string' ? v.nome.trim().slice(0, 60) : '',
-                       creme: ['20', '15', 'ambas'].includes(v.creme) ? v.creme : 'ambas' };
+                       creme: ['20', '15', 'ambas'].includes(v.creme) ? v.creme : 'ambas',
+                       // só nomes curtos já liberados ao auxiliar (o doc é público)
+                       ocultos: (Array.isArray(v.ocultos) ? v.ocultos : [])
+                         .filter((n) => typeof n === 'string' && Object.values(window.PROD_PERMITIDOS || {}).includes(n)).slice(0, 40) };
     }
     const doc = { receitas, atualizadoEm: new Date().toISOString() };  // sem e-mail: o doc é público
     await S.setDoc(S.doc(db, 'producaoPublico', 'config'), doc);

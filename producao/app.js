@@ -105,6 +105,8 @@ function lerCfgRest(doc) {
       visivel: !!(f.visivel && f.visivel.booleanValue === true),
       nome: (f.nome && typeof f.nome.stringValue === 'string') ? f.nome.stringValue : '',
       creme: (f.creme && ['20', '15', 'ambas'].includes(f.creme.stringValue)) ? f.creme.stringValue : 'ambas',
+      ocultos: ((f.ocultos && f.ocultos.arrayValue && f.ocultos.arrayValue.values) || [])
+        .map((x) => x && x.stringValue).filter((x) => typeof x === 'string'),
     };
   });
   return out;
@@ -142,6 +144,9 @@ function receitasVisiveis() {
       const modo = cfg[r.id].creme || 'ambas';
       const v = Object.assign({}, r.variantes || {});
       if (v['20'] && v['15']) { if (modo === '20') delete v['15']; else if (modo === '15') delete v['20']; }
+      // o gerente também pode esconder insumos específicos desta receita
+      const ocultos = Array.isArray(cfg[r.id].ocultos) ? cfg[r.id].ocultos : [];
+      if (ocultos.length) for (const k of Object.keys(v)) v[k] = v[k].filter((i) => !ocultos.includes(i.n));
       return Object.assign({}, r, { variantes: v, nomeExib: (cfg[r.id].nome || '').trim() || r.nome });
     });
 }
