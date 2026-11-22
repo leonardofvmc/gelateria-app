@@ -104,6 +104,7 @@ function lerCfgRest(doc) {
     out[id] = {
       visivel: !!(f.visivel && f.visivel.booleanValue === true),
       nome: (f.nome && typeof f.nome.stringValue === 'string') ? f.nome.stringValue : '',
+      creme: (f.creme && ['20', '15', 'ambas'].includes(f.creme.stringValue)) ? f.creme.stringValue : 'ambas',
     };
   });
   return out;
@@ -136,7 +137,13 @@ function receitasVisiveis() {
   if (!dados || !cfg) return [];
   return dados.receitas
     .filter((r) => cfg[r.id] && cfg[r.id].visivel === true)
-    .map((r) => Object.assign({}, r, { nomeExib: (cfg[r.id].nome || '').trim() || r.nome }));
+    .map((r) => {
+      // o gerente escolhe qual versão do creme aparece: só 20%, só 15% ou as duas
+      const modo = cfg[r.id].creme || 'ambas';
+      const v = Object.assign({}, r.variantes || {});
+      if (v['20'] && v['15']) { if (modo === '20') delete v['15']; else if (modo === '15') delete v['20']; }
+      return Object.assign({}, r, { variantes: v, nomeExib: (cfg[r.id].nome || '').trim() || r.nome });
+    });
 }
 
 /* ---------- estado por receita (lote e marcações), gravado no aparelho ---------- */
@@ -314,9 +321,8 @@ function viewRecipe(id) {
   const st = estadoDe(id);
   let creme = tem15 && st.creme === '15' ? '15' : (vars['20'] && vars['20'].length ? '20' : Object.keys(vars)[0]);
   const ings = vars[creme] || [];
-  const leite1 = r.leite && r.leite[creme] > 0 ? Number(r.leite[creme]) : 0;
   const lembretes = (r.lembretes || []).filter((t) => String(t || '').trim());
-  let kg = st.kg > 0 ? st.kg : LOTE_PADRAO;
+  const kg = LOTE_PADRAO;   // lote FIXO de 6 kg (decisão do gerente): o auxiliar não altera
   const chaveItem = (i) => i + ':' + (ings[i] ? ings[i].n : '');
   const feitos = () => (st.feitos[creme] = st.feitos[creme] || []);
 
@@ -333,15 +339,9 @@ function viewRecipe(id) {
     <button data-v="15" class="${creme === '15' ? 'on' : ''}">Creme de leite 15%</button></div>` : ''}
 
   <div class="card"><h3>⚖️ Lote & ingredientes</h3>
-    <div class="${leite1 ? 'grid2' : ''}">
-      <div><label class="lab" for="loteKg">Tamanho do lote (kg)</label>
-        <input class="inp" id="loteKg" inputmode="decimal" autocomplete="off" value="${nf(kg, 2)}"></div>
-      ${leite1 ? `<div><label class="lab" for="loteLeite">…ou pelo leite (g)</label>
-        <input class="inp" id="loteLeite" inputmode="decimal" autocomplete="off" value="${nf(leite1 * kg, 0)}"></div>` : ''}
-    </div>
-    ${leite1 ? '<p class="muted small" style="margin:-4px 0 8px">Mude um dos dois — o outro se ajusta e todos os ingredientes acompanham.</p>' : ''}
+    <p class="muted small" style="margin:0 0 8px">Lote de <b>${nf(kg, 0)} kg</b></p>
     <div class="btnrow" style="justify-content:flex-end;margin-bottom:6px">
-      <button class="btn sec mini" id="limparCheckBtn">↺ Limpar marcações e lote</button>
+      <button class="btn sec mini" id="limparCheckBtn">↺ Limpar marcações</button>
     </div>
     <table class="ix" id="tbl"></table>
   </div>`;
@@ -386,29 +386,6 @@ function viewRecipe(id) {
     renderTabela();
   };
 
-  const kgEl = $('#loteKg'), leiteEl = $('#loteLeite');
-  const soltaEnter = (el) => { el.onkeydown = (e) => { if (e.key === 'Enter') el.blur(); }; };
-  kgEl.oninput = () => {
-    const v = parseNum(kgEl.value);
-    if (!(v > 0)) return;
-    kg = v; st.kg = v; salvarEstado();
-    if (leiteEl) leiteEl.value = nf(leite1 * kg, 0);
-    renderTabela();
-  };
-  kgEl.onchange = () => { kgEl.value = nf(kg, 2); };
-  soltaEnter(kgEl);
-  if (leiteEl) {
-    leiteEl.oninput = () => {
-      const v = parseNum(leiteEl.value);
-      if (!(v > 0) || !leite1) return;
-      kg = v / leite1; st.kg = kg; salvarEstado();
-      kgEl.value = nf(kg, 2);
-      renderTabela();
-    };
-    leiteEl.onchange = () => { leiteEl.value = nf(leite1 * kg, 0); };
-    soltaEnter(leiteEl);
-  }
-
   const sc = $('#segCreme');
   if (sc) sc.onclick = (e) => {
     const v = e.target.dataset && e.target.dataset.v;
@@ -417,7 +394,7 @@ function viewRecipe(id) {
   };
 
   $('#limparCheckBtn').onclick = () => {
-    st.feitos = {}; delete st.kg;               // o lote volta ao padrão só aqui
+    st.feitos = {};
     salvarEstado(); viewRecipe(id);
   };
 }

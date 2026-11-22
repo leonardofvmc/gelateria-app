@@ -278,7 +278,8 @@ window.CLOUD = (function () {
     for (const id of Object.keys(src)) {
       const v = src[id] || {};
       if (!id || typeof v.visivel !== 'boolean') continue;
-      receitas[id] = { visivel: v.visivel, nome: typeof v.nome === 'string' ? v.nome.trim().slice(0, 60) : '' };
+      receitas[id] = { visivel: v.visivel, nome: typeof v.nome === 'string' ? v.nome.trim().slice(0, 60) : '',
+                       creme: ['20', '15', 'ambas'].includes(v.creme) ? v.creme : 'ambas' };
     }
     const doc = { receitas, atualizadoEm: new Date().toISOString() };  // sem e-mail: o doc é público
     await S.setDoc(S.doc(db, 'producaoPublico', 'config'), doc);
