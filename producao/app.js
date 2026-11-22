@@ -62,6 +62,15 @@ async function derivarBits(senha, env) {
     { name: 'PBKDF2', hash: 'SHA-256', salt: b64d(env.salt), iterations: env.iter }, base, 256);
   return new Uint8Array(bits);
 }
+// cada senha abre um "slot" que guarda a chave do conteúdo (a mesma para todas)
+async function abrirSlot(kek, env) {
+  const key = await crypto.subtle.importKey('raw', kek, 'AES-GCM', false, ['decrypt']);
+  for (const sl of (env.slots || [])) {
+    try { return new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64d(sl.iv) }, key, b64d(sl.ct))); }
+    catch (e) { /* tenta o próximo */ }
+  }
+  throw new Error('senha');
+}
 async function decifrar(raw, env) {
   const key = await crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['decrypt']);
   const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64d(env.iv) }, key, b64d(env.ct));
@@ -80,7 +89,7 @@ async function carregarEnvelope() {
   const r = await fetch('dados.bin', { cache: 'no-store' });
   if (!r.ok) throw new Error('HTTP ' + r.status);
   const env = JSON.parse(await r.text());
-  if (!env || !env.ct || !env.iv || !env.salt || !env.iter) throw new Error('formato');
+  if (!env || !env.ct || !env.iv || !env.salt || !env.iter || !Array.isArray(env.slots)) throw new Error('formato');
   return env;
 }
 
@@ -170,7 +179,7 @@ function viewLogin(msg) {
   <form class="card" id="loginForm" autocomplete="on">
     <label class="lab" for="senha">Senha</label>
     <input class="inp" id="senha" name="password" type="password" autocomplete="current-password" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="Digite a senha">
-    <label class="lembrar"><input type="checkbox" id="lembrar"> Lembrar neste aparelho</label>
+    <p class="muted small">Neste aparelho a senha vale por 24 horas; depois ela é pedida de novo.</p>
     <div class="erro" id="erro" role="alert">${esc(msg || '')}</div>
     <button class="btn full" id="entrarBtn" type="submit">Entrar</button>
   </form>`;
@@ -196,7 +205,7 @@ async function entrar() {
   }
   let raw;
   try {
-    raw = await derivarBits(senha, envelope);
+    raw = await abrirSlot(await derivarBits(senha, envelope), envelope);
     dados = await decifrar(raw, envelope);
   } catch (e) {
     dados = null;
@@ -205,7 +214,7 @@ async function entrar() {
     const s = $('#senha'); if (s) { s.select(); s.focus(); }
     return;
   }
-  if ($('#lembrar').checked) lsSet(K.chave, b64e(raw)); else lsDel(K.chave);
+  lsSet(K.chave, JSON.stringify({ k: b64e(raw), t: Date.now() }));   // vale 24 h (VALIDADE)
   await abrir();
 }
 
@@ -433,8 +442,23 @@ document.addEventListener('visibilitychange', async () => {
 });
 
 /* ============================================================ INÍCIO */
+// a senha vale 24 h por aparelho; depois disso é pedida de novo (para todos)
+const VALIDADE = 24 * 60 * 60 * 1000;
+function chaveValida() {
+  try {
+    const o = JSON.parse(lsGet(K.chave) || 'null');
+    if (o && typeof o.k === 'string' && typeof o.t === 'number' && Date.now() - o.t < VALIDADE && Date.now() >= o.t) return o.k;
+  } catch (e) { /* formato antigo ou inválido */ }
+  lsDel(K.chave);
+  return null;
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && dados && !chaveValida()) sair();
+});
 async function iniciar() {
-  const guardada = lsGet(K.chave);
+  const tinha = !!lsGet(K.chave);
+  const guardada = chaveValida();
+  if (!guardada && tinha) { viewLogin('Por segurança, digite a senha de novo (vale 24 horas).'); return; }
   if (guardada && window.crypto && crypto.subtle) {
     try {
       envelope = await carregarEnvelope();

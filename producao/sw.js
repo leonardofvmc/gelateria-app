@@ -2,13 +2,13 @@
    - arquivos estáticos desta pasta + css/fontes/ícones compartilhados: rede primeiro, cache offline
    - dados.bin: SEMPRE rede primeiro (só cai no cache se estiver sem internet)
    - nada fora desta pasta é guardado, exceto ../css/style.css, ../fonts/ e ../icons/ */
-const CACHE = 'producao-v1';
+const CACHE = 'producao-v2';
 const BASE = new URL('./', self.location).pathname;      // .../producao/
 const PAI = new URL('../', self.location).pathname;      // pasta do app (um nível acima)
 const FILES = [
   './', './index.html', './app.js', './producao.css', './manifest.webmanifest',
   '../css/style.css',
-  '../icons/icon-192.png', '../icons/icon-512.png',
+  'icon-192.png', 'icon-512.png',
   '../fonts/inter-400.woff2', '../fonts/inter-500.woff2', '../fonts/inter-600.woff2',
   '../fonts/inter-700.woff2', '../fonts/fraunces-600.woff2', '../fonts/fraunces-700.woff2',
 ];

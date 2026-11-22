@@ -70,10 +70,37 @@ window.CLOUD = (function () {
 
   // ---- auth ----
   async function login(email, senha) { await S.signInWithEmailAndPassword(auth, email.trim(), senha); }
-  async function signup(email, senha) { await S.createUserWithEmailAndPassword(auth, email.trim(), senha); }
+  async function signup(email, senha) {
+    const cred = await S.createUserWithEmailAndPassword(auth, email.trim(), senha);
+    // conta nova por e-mail/senha nasce NÃO verificada: manda o e-mail de confirmação já
+    try { await S.sendEmailVerification(cred.user); } catch (e) { console.warn('verificação de e-mail', e); }
+  }
   async function logout() { await S.signOut(auth); }
   // manda o e-mail do Firebase com o link para criar uma senha nova
   async function resetSenha(email) { await S.sendPasswordResetEmail(auth, email.trim()); }
+  // ---- e-mail verificado (o porteiro exige; as regras do Firestore também) ----
+  async function reenviarVerificacao() {
+    if (!_user) throw new Error('sem login');
+    await S.sendEmailVerification(_user);
+  }
+  // Relê a conta no servidor e renova o token (as regras olham o email_verified
+  // DO TOKEN, que só atualiza depois do getIdToken(true)). Devolve true/false.
+  async function recarregarUsuario() {
+    if (!_user) return false;
+    await S.reload(_user);
+    if (_user.emailVerified) { try { await _user.getIdToken(true); } catch (e) {} }
+    return !!_user.emailVerified;
+  }
+
+  // ---- PIN do app: pinsApp/{email-minúsculo} = { hash, salt, iter, atualizadoEm, aparelho[, redefinidoEm] }
+  // Só o hash PBKDF2 (nunca o PIN). Só o próprio usuário (verificado) lê/escreve.
+  function pinRef() { return S.doc(db, 'pinsApp', emailAtual()); }
+  async function getPinApp() {
+    const snap = await S.getDoc(pinRef());
+    return snap.exists() ? snap.data() : null;
+  }
+  async function setPinApp(dados) { await S.setDoc(pinRef(), dados); }
+
   function authError(e) {
     const c = (e && e.code) || '';
     const map = {
@@ -277,6 +304,7 @@ window.CLOUD = (function () {
 
   return { enabled, init, onAuth, currentUser, uid,
            login, signup, logout, resetSenha, authError,
+           reenviarVerificacao, recarregarUsuario, getPinApp, setPinApp,
            isDono, gid, acesso, podeEditar, prepararAcesso,
            listarAcessos, definirAcesso, removerAcesso,
            getProducaoConfig, saveProducaoConfig,
