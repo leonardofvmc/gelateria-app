@@ -105,7 +105,7 @@ function lerCfgRest(doc) {
     out[id] = {
       visivel: !!(f.visivel && f.visivel.booleanValue === true),
       nome: (f.nome && typeof f.nome.stringValue === 'string') ? f.nome.stringValue : '',
-      creme: (f.creme && ['20', '15', 'ambas'].includes(f.creme.stringValue)) ? f.creme.stringValue : 'ambas',
+      creme: (f.creme && ['20', '15', 'ambas', 'duas'].includes(f.creme.stringValue)) ? f.creme.stringValue : 'ambas',
       ocultos: ((f.ocultos && f.ocultos.arrayValue && f.ocultos.arrayValue.values) || [])
         .map((x) => x && x.stringValue).filter((x) => typeof x === 'string'),
     };
@@ -241,7 +241,9 @@ function receitasVisiveis() {
     .filter((r) => cfg[r.id] && cfg[r.id].visivel === true)
     .map((r) => {
       // o gerente escolhe qual versão do creme aparece: só 20%, só 15% ou as duas
-      const modo = cfg[r.id].creme || 'ambas';
+      let modo = cfg[r.id].creme || 'ambas';
+      // mascarpone 35%/30%: padrão só o 35%; as duas só se o gerente marcar 'duas'
+      if (r.alt === 'masc30') modo = modo === 'duas' ? 'ambas' : (modo === '15' ? '15' : '20');
       const v = Object.assign({}, r.variantes || {});
       if (v['20'] && v['15']) { if (modo === '20') delete v['15']; else if (modo === '15') delete v['20']; }
       // o gerente também pode esconder insumos específicos desta receita
@@ -494,8 +496,8 @@ function viewRecipe(id) {
   ${lembretes.length ? `<div class="lembrete"><h3>Lembretes</h3><ul>${lembretes.map((t) => `<li>${esc(t)}</li>`).join('')}</ul></div>` : ''}
 
   ${tem15 ? `<div class="seg" id="segCreme">
-    <button data-v="20" class="${creme === '20' ? 'on' : ''}">Creme de leite 20%</button>
-    <button data-v="15" class="${creme === '15' ? 'on' : ''}">Creme de leite 15%</button></div>` : ''}
+    <button data-v="20" class="${creme === '20' ? 'on' : ''}">${r.alt === 'masc30' ? 'Mascarpone de creme 35%' : 'Creme de leite 20%'}</button>
+    <button data-v="15" class="${creme === '15' ? 'on' : ''}">${r.alt === 'masc30' ? 'Mascarpone de creme 30%' : 'Creme de leite 15%'}</button></div>` : ''}
 
   <div class="card"><h3>⚖️ ${preparo ? 'Quantidade & ingredientes' : 'Lote & ingredientes'}</h3>
     ${preparo ? `<label class="lab" for="baseG">${esc(ings[0].n)} que você vai usar (g)</label>
