@@ -34,6 +34,7 @@ const ICON = {
 const catColors = {
   Creme: { bg: 'var(--brand-soft)', fg: 'var(--brand)' },
   Sorbet: { bg: 'var(--accent-soft)', fg: 'var(--accent)' },
+  Insumo: { bg: '#f2ebdd', fg: '#8c7b5e' },
 };
 function scoopBadge(grupo) {
   const c = catColors[grupo] || catColors.Creme;
@@ -327,7 +328,7 @@ function viewHome() {
     <div id="agenda"></div>
     <h2 class="sect">Todas as receitas</h2>
     <input class="inp" id="q" type="search" placeholder="🔎 Buscar sabor…" value="${esc(filtro.q)}" autocomplete="off">
-    <div class="seg" id="segCat">${['Todos', 'Creme', 'Fitness', 'Sorbet'].map((c) =>
+    <div class="seg" id="segCat">${['Todos', 'Creme', 'Fitness', 'Sorbet'].concat(receitasVisiveis().some((r) => r.grupo === 'Insumo') ? ['Insumo'] : []).map((c) =>
       `<button data-v="${c}" class="${filtro.cat === c ? 'on' : ''}">${c}</button>`).join('')}</div>
     <div class="rlist" id="items"></div>
     <p class="muted small" id="cnt" style="text-align:center"></p>
@@ -368,7 +369,7 @@ function renderAgenda() {
     const { iso, ehHoje, dm } = dataDoDia(i);
     const dia = (agenda[k] && typeof agenda[k] === 'object') ? agenda[k] : {};
     const blocos = TIPOS.map(([t, ic, tit, modo]) => ({ t, ic, tit, modo, itens: (Array.isArray(dia[t]) ? dia[t] : [])
-      .map((id) => modo === 'texto' ? { id, nomeExib: id } : vis[id]).filter(Boolean) }));
+      .map((id) => modo === 'texto' ? ((vis[id] && vis[id].grupo === 'Insumo') ? Object.assign({ link: true }, vis[id]) : { id, nomeExib: id }) : vis[id]).filter(Boolean) }));
     const total = blocos.reduce((n, b) => n + b.itens.length, 0);
     const feitas = blocos.reduce((n, b) => n + b.itens.filter((r) => feitosAg[iso + '|' + b.t + '|' + r.id]).length, 0);
     const cont = !total ? '<span class="ag-cont vazio">—</span>'
@@ -381,7 +382,7 @@ function renderAgenda() {
           const ch = iso + '|' + b.t + '|' + r.id, f = !!feitosAg[ch];
           return `<div class="ag-item${f ? ' feito' : ''}">
             <input type="checkbox" class="ag-chk" data-feito="${esc(ch)}" aria-label="marcar ${esc(r.nomeExib)} (${b.tit}) como feita" ${f ? 'checked' : ''}>
-            ${b.modo !== 'link'
+            ${(b.modo !== 'link' && !r.link)
               ? `<span class="ag-nome-solto">${esc(r.nomeExib)}</span>`   // só um aviso: sem link nem insumos
               : `<a href="#/r/${encodeURIComponent(r.id)}">${esc(r.nomeExib)}<span class="ag-seta">›</span></a>`}</div>`;
         }).join('')}
@@ -438,6 +439,9 @@ function viewRecipe(id) {
   const ings = vars[creme] || [];
   const lembretes = (r.lembretes || []).filter((t) => String(t || '').trim());
   const kg = LOTE_PADRAO;   // lote FIXO de 6 kg (decisão do gerente): o auxiliar não altera
+  // preparo (grupo Insumo): o auxiliar digita o peso do 1º ingrediente e o resto é calculado na proporção
+  const preparo = r.grupo === 'Insumo' && ings.length > 1 && Number(ings[0].g) > 0;
+  const baseG = () => { const v = Number(st.baseG); return v > 0 ? v : Number(ings[0].g); };
   const chaveItem = (i) => i + ':' + (ings[i] ? ings[i].n : '');
   const feitos = () => (st.feitos[creme] = st.feitos[creme] || []);
 
@@ -453,8 +457,11 @@ function viewRecipe(id) {
     <button data-v="20" class="${creme === '20' ? 'on' : ''}">Creme de leite 20%</button>
     <button data-v="15" class="${creme === '15' ? 'on' : ''}">Creme de leite 15%</button></div>` : ''}
 
-  <div class="card"><h3>⚖️ Lote & ingredientes</h3>
-    <p class="muted small" style="margin:0 0 8px">Lote de <b>${nf(kg, 0)} kg</b></p>
+  <div class="card"><h3>⚖️ ${preparo ? 'Quantidade & ingredientes' : 'Lote & ingredientes'}</h3>
+    ${preparo ? `<label class="lab" for="baseG">${esc(ings[0].n)} que você vai usar (g)</label>
+      <input class="inp" id="baseG" type="number" inputmode="decimal" min="1" step="any" value="${esc(String(baseG()))}" style="font-size:20px;font-weight:700">
+      <p class="muted small" style="margin:6px 0 10px">Os outros ingredientes são calculados na hora.</p>`
+    : `<p class="muted small" style="margin:0 0 8px">Lote de <b>${nf(kg, 0)} kg</b></p>`}
     <div class="btnrow" style="justify-content:flex-end;margin-bottom:6px">
       <button class="btn sec mini" id="limparCheckBtn">↺ Limpar marcações</button>
     </div>
@@ -469,7 +476,7 @@ function viewRecipe(id) {
     const marc = feitos();
     let total = 0, soma = 0, nMarc = 0;
     const linhas = ings.map((i, idx) => {
-      const g = (Number(i.g) || 0) * kg;
+      const g = preparo ? (Number(i.g) || 0) / Number(ings[0].g) * baseG() : (Number(i.g) || 0) * kg;
       const feito = marc.includes(chaveItem(idx));
       total += g;
       if (feito) { soma += g; nMarc++; }
@@ -487,6 +494,12 @@ function viewRecipe(id) {
         <td class="v" style="text-align:center;white-space:nowrap" title="soma dos ingredientes já marcados">${somaHtml}</td></tr>`;
   }
   renderTabela();
+  const bi = $('#baseG');
+  if (bi) bi.oninput = () => {
+    const v = parseFloat(String(bi.value).replace(',', '.'));
+    st.baseG = v > 0 ? v : null;     // vazio/inválido volta ao padrão
+    salvarEstado(); renderTabela();
+  };
 
   // marca sem recarregar a tela (não perde a posição da rolagem)
   tbl.onchange = (e) => {
