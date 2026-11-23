@@ -74,3 +74,19 @@ html, body { overflow-x: hidden; }
 }
 :root[data-theme="dark"] .ag-bloco.congelar { background: #14283a; border-color: #5aa6e0; }
 :root[data-theme="dark"] .ag-bloco.congelar .ag-btit { color: #8cc4ee; }
+
+/* descongelar (lilás) e produção de insumos (bege) */
+.ag-bloco.descongelar { background: #efe8f7; border-color: #8a5cc2; }
+.ag-bloco.descongelar .ag-btit { color: #5d3a8e; }
+.ag-bloco.insumos { background: #f2ebdd; border-color: #8c7b5e; }
+.ag-bloco.insumos .ag-btit { color: #5f5037; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .ag-bloco.descongelar { background: #261c36; border-color: #a884d6; }
+  :root:not([data-theme="light"]) .ag-bloco.descongelar .ag-btit { color: #c9aef0; }
+  :root:not([data-theme="light"]) .ag-bloco.insumos { background: #2a251b; border-color: #a99a78; }
+  :root:not([data-theme="light"]) .ag-bloco.insumos .ag-btit { color: #d1c3a0; }
+}
+:root[data-theme="dark"] .ag-bloco.descongelar { background: #261c36; border-color: #a884d6; }
+:root[data-theme="dark"] .ag-bloco.descongelar .ag-btit { color: #c9aef0; }
+:root[data-theme="dark"] .ag-bloco.insumos { background: #2a251b; border-color: #a99a78; }
+:root[data-theme="dark"] .ag-bloco.insumos .ag-btit { color: #d1c3a0; }

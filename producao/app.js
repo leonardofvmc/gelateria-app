@@ -140,7 +140,8 @@ const AGENDA_URL = 'https://firestore.googleapis.com/v1/projects/gelateria-la-ma
 const DIAS = [['seg', 'Segunda-feira'], ['ter', 'Terça-feira'], ['qua', 'Quarta-feira'], ['qui', 'Quinta-feira'], ['sex', 'Sexta-feira'], ['sab', 'Sábado'], ['dom', 'Domingo']];
 let agenda = {};         // { seg: [id,...], ... }
 const agAbertos = new Set();   // dias expandidos (em memória: ao abrir o app, todos recolhidos)
-const TIPOS = [['calda', '🥣', 'Calda'], ['bater', '🍨', 'Bater o gelato'], ['congelar', '❄️', 'Congelar calda']];
+// ordem de exibição; 'texto' = nome livre (não é receita); 'aviso' = só o nome da receita, sem link
+const TIPOS = [['insumos', '🧀', 'Produção de insumos', 'texto'], ['descongelar', '🧊', 'Descongelar calda', 'aviso'], ['calda', '🥣', 'Calda', 'link'], ['congelar', '❄️', 'Congelar calda', 'aviso'], ['bater', '🍨', 'Bater o gelato', 'link']];
 function lerAgendaRest(doc) {
   const campos = ((((doc || {}).fields || {}).dias || {}).mapValue || {}).fields || {};
   const out = {};
@@ -149,7 +150,7 @@ function lerAgendaRest(doc) {
     out[k] = {};
     TIPOS.forEach(([t]) => {
       const vals = ((((f[t] || {}).arrayValue) || {}).values) || [];
-      out[k][t] = vals.map((x) => x && x.stringValue).filter((x) => typeof x === 'string').slice(0, 40);
+      out[k][t] = vals.map((x) => x && x.stringValue).filter((x) => typeof x === 'string').map((x) => x.slice(0, 80)).slice(0, 40);
     });
   });
   return out;
@@ -359,14 +360,15 @@ function viewHome() {
   };
 }
 
-// cada dia é um cartão recolhido; ao abrir mostra dois blocos distintos (calda / bater o gelato)
+// cada dia é um cartão recolhido; ao abrir mostra só os blocos preenchidos (insumos, descongelar, calda, congelar, bater)
 function renderAgenda() {
   const el = $('#agenda'); if (!el) return;
   const vis = {}; receitasVisiveis().forEach((r) => { vis[r.id] = r; });
   el.innerHTML = DIAS.map(([k, nome], i) => {
     const { iso, ehHoje, dm } = dataDoDia(i);
     const dia = (agenda[k] && typeof agenda[k] === 'object') ? agenda[k] : {};
-    const blocos = TIPOS.map(([t, ic, tit]) => ({ t, ic, tit, itens: (Array.isArray(dia[t]) ? dia[t] : []).map((id) => vis[id]).filter(Boolean) }));
+    const blocos = TIPOS.map(([t, ic, tit, modo]) => ({ t, ic, tit, modo, itens: (Array.isArray(dia[t]) ? dia[t] : [])
+      .map((id) => modo === 'texto' ? { id, nomeExib: id } : vis[id]).filter(Boolean) }));
     const total = blocos.reduce((n, b) => n + b.itens.length, 0);
     const feitas = blocos.reduce((n, b) => n + b.itens.filter((r) => feitosAg[iso + '|' + b.t + '|' + r.id]).length, 0);
     const cont = !total ? '<span class="ag-cont vazio">—</span>'
@@ -379,7 +381,7 @@ function renderAgenda() {
           const ch = iso + '|' + b.t + '|' + r.id, f = !!feitosAg[ch];
           return `<div class="ag-item${f ? ' feito' : ''}">
             <input type="checkbox" class="ag-chk" data-feito="${esc(ch)}" aria-label="marcar ${esc(r.nomeExib)} (${b.tit}) como feita" ${f ? 'checked' : ''}>
-            ${b.t === 'congelar'
+            ${b.modo !== 'link'
               ? `<span class="ag-nome-solto">${esc(r.nomeExib)}</span>`   // só um aviso: sem link nem insumos
               : `<a href="#/r/${encodeURIComponent(r.id)}">${esc(r.nomeExib)}<span class="ag-seta">›</span></a>`}</div>`;
         }).join('')}

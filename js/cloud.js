@@ -300,9 +300,15 @@ window.CLOUD = (function () {
     const dias = {};
     for (const d of DIAS_AGENDA) {
       dias[d] = {};
-      for (const t of ['calda', 'bater', 'congelar']) {     // calda (base) e bater o gelato são processos distintos
+      // receitas: só ids; "insumos": nomes livres (ex.: produção de um insumo), texto curto
+      for (const t of ['insumos', 'descongelar', 'calda', 'congelar', 'bater']) {
         const lista = (agenda && agenda[d] && Array.isArray(agenda[d][t])) ? agenda[d][t] : [];
-        dias[d][t] = lista.filter((id, i) => typeof id === 'string' && /^[A-Za-z0-9_-]{1,80}$/.test(id) && lista.indexOf(id) === i).slice(0, 30);
+        if (t === 'insumos') {
+          const txt = lista.map((x) => String(x == null ? '' : x).replace(/[|\n\r]/g, ' ').trim().slice(0, 50)).filter(Boolean);
+          dias[d][t] = txt.filter((x, i) => txt.indexOf(x) === i).slice(0, 20);
+        } else {
+          dias[d][t] = lista.filter((id, i) => typeof id === 'string' && /^[A-Za-z0-9_-]{1,80}$/.test(id) && lista.indexOf(id) === i).slice(0, 30);
+        }
       }
     }
     const doc = { dias, atualizadoEm: new Date().toISOString() };
