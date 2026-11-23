@@ -289,6 +289,27 @@ window.CLOUD = (function () {
     return doc;
   }
 
+  // programação semanal do auxiliar: só ids de receita por dia (doc público, sem e-mail)
+  const DIAS_AGENDA = ['seg', 'ter', 'qua', 'qui', 'sex', 'sab', 'dom'];
+  async function getProducaoAgenda() {
+    const snap = await S.getDoc(S.doc(db, 'producaoPublico', 'agenda'));
+    return snap.exists() ? snap.data() : null;
+  }
+  async function saveProducaoAgenda(agenda) {
+    if (!isDono()) throw new Error('Só o dono pode alterar a programação do auxiliar.');
+    const dias = {};
+    for (const d of DIAS_AGENDA) {
+      dias[d] = {};
+      for (const t of ['calda', 'bater', 'congelar']) {     // calda (base) e bater o gelato são processos distintos
+        const lista = (agenda && agenda[d] && Array.isArray(agenda[d][t])) ? agenda[d][t] : [];
+        dias[d][t] = lista.filter((id, i) => typeof id === 'string' && /^[A-Za-z0-9_-]{1,80}$/.test(id) && lista.indexOf(id) === i).slice(0, 30);
+      }
+    }
+    const doc = { dias, atualizadoEm: new Date().toISOString() };
+    await S.setDoc(S.doc(db, 'producaoPublico', 'agenda'), doc);
+    return doc;
+  }
+
   // grava muitos docs em lotes (writeBatch, máx 450/lote)
   async function batchSet(items) {
     for (let i = 0; i < items.length; i += 450) {
@@ -311,6 +332,6 @@ window.CLOUD = (function () {
            reenviarVerificacao, recarregarUsuario, getPinApp, setPinApp,
            isDono, gid, acesso, podeEditar, prepararAcesso,
            listarAcessos, definirAcesso, removerAcesso,
-           getProducaoConfig, saveProducaoConfig,
+           getProducaoConfig, saveProducaoConfig, getProducaoAgenda, saveProducaoAgenda,
            getAll, getAllComId, getDocData, subscribe, put, del, batchSet, clearColl };
 })();

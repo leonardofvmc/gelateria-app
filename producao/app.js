@@ -18,7 +18,7 @@ const parseNum = (v) => { const n = parseFloat(String(v).replace(',', '.')); ret
 const LOTE_PADRAO = 6;
 
 /* ---------- armazenamento local (tudo dentro de try: aba anônima / cheio) ---------- */
-const K = { chave: 'prod_chave', cfg: 'prod_cfg', cfgDev: 'prod_cfg_dev', estado: 'prod_estado', tema: 'prod_tema' };
+const K = { chave: 'prod_chave', cfg: 'prod_cfg', cfgDev: 'prod_cfg_dev', estado: 'prod_estado', tema: 'prod_tema', agenda: 'prod_agenda', agendaDev: 'prod_agenda_dev', feitos: 'prod_feitos' };
 const lsGet = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
 const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* segue sem gravar */ } };
 const lsDel = (k) => { try { localStorage.removeItem(k); } catch (e) { /* ok */ } };
@@ -114,7 +114,7 @@ function lerCfgRest(doc) {
 function cfgSalva() {
   try { const o = JSON.parse(lsGet(K.cfg) || 'null'); return o && typeof o === 'object' ? o : null; } catch (e) { return null; }
 }
-async function carregarCfg() {
+async function carregarCfgBase() {
   if (location.hostname === 'localhost') {          // só para testes locais
     try {
       const dev = JSON.parse(lsGet(K.cfgDev) || 'null');
@@ -133,6 +133,66 @@ async function carregarCfg() {
     cfg = cfgSalva() || {};
     cfgFonte = cfgSalva() ? 'salvo' : '';
   } finally { clearTimeout(t); }
+}
+
+/* ---------- programação semanal (montada pelo gerente; só ids de receita por dia) ---------- */
+const AGENDA_URL = 'https://firestore.googleapis.com/v1/projects/gelateria-la-maddalena/databases/(default)/documents/producaoPublico/agenda?key=AIzaSyDUgLdOsrovpbybf2dIn0-nvhw9K8Xx55k';
+const DIAS = [['seg', 'Segunda-feira'], ['ter', 'Terça-feira'], ['qua', 'Quarta-feira'], ['qui', 'Quinta-feira'], ['sex', 'Sexta-feira'], ['sab', 'Sábado'], ['dom', 'Domingo']];
+let agenda = {};         // { seg: [id,...], ... }
+const agAbertos = new Set();   // dias expandidos (em memória: ao abrir o app, todos recolhidos)
+const TIPOS = [['calda', '🥣', 'Calda'], ['bater', '🍨', 'Bater o gelato'], ['congelar', '❄️', 'Congelar calda']];
+function lerAgendaRest(doc) {
+  const campos = ((((doc || {}).fields || {}).dias || {}).mapValue || {}).fields || {};
+  const out = {};
+  DIAS.forEach(([k]) => {
+    const f = (((campos[k] || {}).mapValue) || {}).fields || {};
+    out[k] = {};
+    TIPOS.forEach(([t]) => {
+      const vals = ((((f[t] || {}).arrayValue) || {}).values) || [];
+      out[k][t] = vals.map((x) => x && x.stringValue).filter((x) => typeof x === 'string').slice(0, 40);
+    });
+  });
+  return out;
+}
+function agendaSalva() {
+  try { const o = JSON.parse(lsGet(K.agenda) || 'null'); return o && typeof o === 'object' ? o : {}; } catch (e) { return {}; }
+}
+async function carregarAgenda() {
+  if (location.hostname === 'localhost') {          // só para testes locais
+    try {
+      const dev = JSON.parse(lsGet(K.agendaDev) || 'null');
+      if (dev && typeof dev === 'object') { agenda = dev; return; }
+    } catch (e) { /* ignora */ }
+  }
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), 8000);
+  try {
+    const r = await fetch(AGENDA_URL, { cache: 'no-store', signal: ctl.signal });
+    if (r.status === 404) { agenda = {}; lsSet(K.agenda, '{}'); return; }   // gerente ainda não montou
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    agenda = lerAgendaRest(await r.json());
+    lsSet(K.agenda, JSON.stringify(agenda));
+  } catch (e) { agenda = agendaSalva(); }
+  finally { clearTimeout(t); }
+}
+const visual = () => JSON.stringify([cfg, agenda]);
+async function carregarCfg() { await Promise.all([carregarCfgBase(), carregarAgenda()]); }
+
+/* receitas já feitas, por dia da semana: chave "AAAA-MM-DD|id" (some depois de 30 dias) */
+const feitosAg = (() => {
+  let o = {};
+  try { o = JSON.parse(lsGet(K.feitos) || '{}') || {}; } catch (e) { o = {}; }
+  const corte = Date.now() - 30 * 86400000;
+  Object.keys(o).forEach((k) => { const t = Date.parse(k.split('|')[0]); if (!(t > corte)) delete o[k]; });
+  return o;
+})();
+const salvarFeitosAg = () => lsSet(K.feitos, JSON.stringify(feitosAg));
+const isoLocal = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+// data (desta semana, começando na segunda) do dia i
+function dataDoDia(i) {
+  const h = new Date(); const hoje = (h.getDay() + 6) % 7;
+  const d = new Date(h.getFullYear(), h.getMonth(), h.getDate() + (i - hoje));
+  return { iso: isoLocal(d), ehHoje: i === hoje, dm: d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) };
 }
 
 function receitasVisiveis() {
@@ -251,16 +311,20 @@ async function abrir() {
   }
   if (ini) { cfg = ini; cfgFonte = 'salvo'; }
   else { cfg = {}; cfgFonte = ''; }
+  agenda = agendaSalva();
   render();
-  const antes = JSON.stringify(cfg);
+  const antes = visual();
   await carregarCfg();
-  if (dados && JSON.stringify(cfg) !== antes) render();
+  if (dados && visual() !== antes) render();
   else if (dados) atualizarRodape();
 }
 
 /* ============================================================ LISTA */
 function viewHome() {
   const inner = `
+    <h2 class="sect" style="margin-top:4px">📅 Programação da semana</h2>
+    <div id="agenda"></div>
+    <h2 class="sect">Todas as receitas</h2>
     <input class="inp" id="q" type="search" placeholder="🔎 Buscar sabor…" value="${esc(filtro.q)}" autocomplete="off">
     <div class="seg" id="segCat">${['Todos', 'Creme', 'Fitness', 'Sorbet'].map((c) =>
       `<button data-v="${c}" class="${filtro.cat === c ? 'on' : ''}">${c}</button>`).join('')}</div>
@@ -280,6 +344,50 @@ function viewHome() {
     renderItens();
   };
   renderItens();
+  renderAgenda();
+  const ag = $('#agenda');
+  ag.addEventListener('toggle', (e) => {
+    const d = e.target.dataset && e.target.dataset.dia;
+    if (d) { if (e.target.open) agAbertos.add(d); else agAbertos.delete(d); }
+  }, true);
+  ag.onchange = (e) => {
+    const k = e.target.dataset && e.target.dataset.feito;
+    if (!k) return;
+    if (e.target.checked) feitosAg[k] = 1; else delete feitosAg[k];
+    salvarFeitosAg();
+    renderAgenda();
+  };
+}
+
+// cada dia é um cartão recolhido; ao abrir mostra dois blocos distintos (calda / bater o gelato)
+function renderAgenda() {
+  const el = $('#agenda'); if (!el) return;
+  const vis = {}; receitasVisiveis().forEach((r) => { vis[r.id] = r; });
+  el.innerHTML = DIAS.map(([k, nome], i) => {
+    const { iso, ehHoje, dm } = dataDoDia(i);
+    const dia = (agenda[k] && typeof agenda[k] === 'object') ? agenda[k] : {};
+    const blocos = TIPOS.map(([t, ic, tit]) => ({ t, ic, tit, itens: (Array.isArray(dia[t]) ? dia[t] : []).map((id) => vis[id]).filter(Boolean) }));
+    const total = blocos.reduce((n, b) => n + b.itens.length, 0);
+    const feitas = blocos.reduce((n, b) => n + b.itens.filter((r) => feitosAg[iso + '|' + b.t + '|' + r.id]).length, 0);
+    const cont = !total ? '<span class="ag-cont vazio">—</span>'
+      : feitas === total ? `<span class="ag-cont ok">✓ ${total}/${total}</span>`
+      : `<span class="ag-cont">${feitas}/${total}</span>`;
+    const corpo = total ? blocos.filter((b) => b.itens.length).map((b) => `
+      <div class="ag-bloco ${b.t}">
+        <div class="ag-btit"><span>${b.ic}</span> ${b.tit}</div>
+        ${b.itens.map((r) => {
+          const ch = iso + '|' + b.t + '|' + r.id, f = !!feitosAg[ch];
+          return `<div class="ag-item${f ? ' feito' : ''}">
+            <input type="checkbox" class="ag-chk" data-feito="${esc(ch)}" aria-label="marcar ${esc(r.nomeExib)} (${b.tit}) como feita" ${f ? 'checked' : ''}>
+            ${b.t === 'congelar'
+              ? `<span class="ag-nome-solto">${esc(r.nomeExib)}</span>`   // só um aviso: sem link nem insumos
+              : `<a href="#/r/${encodeURIComponent(r.id)}">${esc(r.nomeExib)}<span class="ag-seta">›</span></a>`}</div>`;
+        }).join('')}
+      </div>`).join('') : '<p class="muted small" style="margin:0">Nada programado para este dia.</p>';
+    return `<details class="ap ag-dia${ehHoje ? ' hoje' : ''}" data-dia="${k}" ${agAbertos.has(k) ? 'open' : ''}>
+      <summary><span class="ag-nome">${nome}</span>${ehHoje ? '<span class="ag-tag">Hoje</span>' : `<span class="ag-data">${dm}</span>`}${cont}</summary>
+      <div class="apc">${corpo}</div></details>`;
+  }).join('');
 }
 
 function renderItens() {
@@ -418,9 +526,9 @@ window.addEventListener('hashchange', render);
 // ao voltar para o app, confere se o gerente mudou a lista
 document.addEventListener('visibilitychange', async () => {
   if (document.visibilityState !== 'visible' || !dados) return;
-  const antes = JSON.stringify(cfg);
+  const antes = visual();
   await carregarCfg();
-  if (dados && JSON.stringify(cfg) !== antes) render();
+  if (dados && visual() !== antes) render();
 });
 
 /* ============================================================ INÍCIO */

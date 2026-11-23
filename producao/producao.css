@@ -35,3 +35,42 @@ html, body { overflow-x: hidden; }
 .seg button { line-height: 1.25; }
 /* rótulos que quebram em duas linhas não desalinham os dois campos de lote */
 .card .grid2 { align-items: end; }
+
+/* ---------- programação da semana ---------- */
+.ag-dia summary { gap: 10px; }
+.ag-dia summary::after { margin-left: 12px; }
+.ag-nome { font-weight: 700; }
+.ag-data { color: var(--ink3); font-size: 13px; font-weight: 500; }
+.ag-tag { background: var(--brand); color: #fff; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; padding: 2px 9px; border-radius: 99px; }
+.ag-cont { margin-left: auto; font-size: 13px; font-weight: 700; color: var(--ink2); font-variant-numeric: tabular-nums; }
+.ag-cont.ok { color: var(--ok); }
+.ag-cont.vazio { color: var(--ink3); font-weight: 500; }
+.ag-dia.hoje { border-color: var(--brand); }
+.ag-item { display: flex; align-items: center; gap: 14px; padding: 4px 0; border-top: 1px solid var(--line); }
+.ag-item:first-child { border-top: 0; }
+.ag-chk { width: 26px; height: 26px; accent-color: var(--brand); flex: none; margin: 0; }
+.ag-item a { flex: 1; min-width: 0; display: flex; align-items: center; padding: 12px 0; color: var(--ink); text-decoration: none; font-weight: 600; font-size: 16px; overflow-wrap: anywhere; }
+.ag-seta { margin-left: auto; padding-left: 10px; color: var(--ink3); font-size: 22px; font-weight: 400; }
+.ag-item.feito a { text-decoration: line-through; color: var(--ink3); opacity: .6; font-weight: 500; }
+
+/* blocos do dia: calda (âmbar) x bater o gelato (verde) — processos diferentes, cores diferentes */
+.ag-bloco { border-radius: 14px; padding: 10px 14px 4px; margin: 10px 0 0; border-left: 6px solid; }
+.ag-bloco.calda { background: var(--accent-soft); border-color: var(--accent); }
+.ag-bloco.bater { background: var(--brand-soft); border-color: var(--brand); }
+.ag-btit { font-size: 12.5px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; padding: 2px 0 4px; }
+.ag-bloco.calda .ag-btit { color: var(--warn); }
+.ag-bloco.bater .ag-btit { color: var(--brand-ink); }
+.ag-bloco .ag-item { border-top: 1px solid rgba(127,127,127,.25); }
+.ag-bloco .ag-btit + .ag-item { border-top: 0; }
+
+/* congelar calda (azul gelo): só um aviso, sem link para a receita */
+.ag-bloco.congelar { background: #e3f0fa; border-color: #3b8bc9; }
+.ag-bloco.congelar .ag-btit { color: #1d5f94; }
+.ag-nome-solto { flex: 1; min-width: 0; padding: 12px 0; font-weight: 600; font-size: 16px; overflow-wrap: anywhere; }
+.ag-item.feito .ag-nome-solto { text-decoration: line-through; color: var(--ink3); opacity: .6; font-weight: 500; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .ag-bloco.congelar { background: #14283a; border-color: #5aa6e0; }
+  :root:not([data-theme="light"]) .ag-bloco.congelar .ag-btit { color: #8cc4ee; }
+}
+:root[data-theme="dark"] .ag-bloco.congelar { background: #14283a; border-color: #5aa6e0; }
+:root[data-theme="dark"] .ag-bloco.congelar .ag-btit { color: #8cc4ee; }
