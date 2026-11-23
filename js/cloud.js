@@ -316,6 +316,16 @@ window.CLOUD = (function () {
     return doc;
   }
 
+  // o que o auxiliar marcou como feito: [{ id:'AAAA-MM-DD_aparelho', itens:[chaves], atualizadoEm }]
+  async function getProducaoFeitos() {
+    if (!isDono()) throw new Error('Só o dono vê o que o auxiliar marcou.');
+    const snap = await S.getDocs(S.collection(db, 'producaoFeitos'));
+    return snap.docs.map((d) => {
+      const v = d.data() || {};
+      return { id: d.id, itens: Object.keys(v.itens || {}).filter((k) => v.itens[k] === true), atualizadoEm: v.atualizadoEm || '' };
+    });
+  }
+
   // grava muitos docs em lotes (writeBatch, máx 450/lote)
   async function batchSet(items) {
     for (let i = 0; i < items.length; i += 450) {
@@ -338,6 +348,6 @@ window.CLOUD = (function () {
            reenviarVerificacao, recarregarUsuario, getPinApp, setPinApp,
            isDono, gid, acesso, podeEditar, prepararAcesso,
            listarAcessos, definirAcesso, removerAcesso,
-           getProducaoConfig, saveProducaoConfig, getProducaoAgenda, saveProducaoAgenda,
+           getProducaoConfig, saveProducaoConfig, getProducaoAgenda, saveProducaoAgenda, getProducaoFeitos,
            getAll, getAllComId, getDocData, subscribe, put, del, batchSet, clearColl };
 })();

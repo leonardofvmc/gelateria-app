@@ -18,7 +18,7 @@ const parseNum = (v) => { const n = parseFloat(String(v).replace(',', '.')); ret
 const LOTE_PADRAO = 6;
 
 /* ---------- armazenamento local (tudo dentro de try: aba anônima / cheio) ---------- */
-const K = { chave: 'prod_chave', cfg: 'prod_cfg', cfgDev: 'prod_cfg_dev', estado: 'prod_estado', tema: 'prod_tema', agenda: 'prod_agenda', agendaDev: 'prod_agenda_dev', feitos: 'prod_feitos' };
+const K = { chave: 'prod_chave', cfg: 'prod_cfg', cfgDev: 'prod_cfg_dev', estado: 'prod_estado', tema: 'prod_tema', agenda: 'prod_agenda', agendaDev: 'prod_agenda_dev', feitos: 'prod_feitos', pend: 'prod_pend', disp: 'prod_disp' };
 const lsGet = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
 const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* segue sem gravar */ } };
 const lsDel = (k) => { try { localStorage.removeItem(k); } catch (e) { /* ok */ } };
@@ -189,6 +189,44 @@ const feitosAg = (() => {
   return o;
 })();
 const salvarFeitosAg = () => lsSet(K.feitos, JSON.stringify(feitosAg));
+
+/* ---------- envia o que foi marcado para o gerente ver (um doc por dia e por aparelho) ---------- */
+const FEITOS_URL = 'https://firestore.googleapis.com/v1/projects/gelateria-la-maddalena/databases/(default)/documents/producaoFeitos/';
+const FEITOS_KEY = 'AIzaSyDUgLdOsrovpbybf2dIn0-nvhw9K8Xx55k';
+function idAparelho() {
+  let d = lsGet(K.disp);
+  if (!/^[a-z0-9]{8,16}$/.test(d || '')) {
+    const b = new Uint8Array(6); crypto.getRandomValues(b);
+    d = Array.from(b, (x) => (x % 36).toString(36)).join('') + Date.now().toString(36).slice(-4);
+    lsSet(K.disp, d);
+  }
+  return d;
+}
+const pendentes = () => { try { const a = JSON.parse(lsGet(K.pend) || '[]'); return Array.isArray(a) ? a : []; } catch (e) { return []; } };
+const salvarPend = (a) => lsSet(K.pend, JSON.stringify(a));
+async function enviarDia(iso) {
+  if (location.hostname === 'localhost' && !lsGet('prod_sync_teste')) return;   // testes locais não gravam na nuvem
+  const itens = {};
+  Object.keys(feitosAg).forEach((k) => { if (k.startsWith(iso + '|')) itens[k.slice(iso.length + 1)] = { booleanValue: true }; });
+  const body = { fields: { itens: { mapValue: { fields: itens } }, atualizadoEm: { stringValue: new Date().toISOString() } } };
+  const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 10000);
+  try {
+    const r = await fetch(FEITOS_URL + iso + '_' + idAparelho() + '?key=' + FEITOS_KEY,
+      { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: ctl.signal });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    salvarPend(pendentes().filter((d) => d !== iso));
+  } catch (e) {
+    const p = pendentes(); if (!p.includes(iso)) { p.push(iso); salvarPend(p); }
+  } finally { clearTimeout(t); }
+}
+// reenvia o que ficou pendente (sem internet na hora) e, ao abrir, os últimos 7 dias marcados
+async function reenviarPendentes(recentes) {
+  const lim = isoLocal(new Date(Date.now() - 7 * 86400000));
+  const set = new Set(pendentes());
+  if (recentes) Object.keys(feitosAg).forEach((k) => { const d = k.split('|')[0]; if (d >= lim) set.add(d); });
+  for (const d of set) await enviarDia(d);
+}
+window.addEventListener('online', () => { if (dados) reenviarPendentes(false); });
 const isoLocal = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 // data (desta semana, começando na segunda) do dia i
 function dataDoDia(i) {
@@ -308,7 +346,7 @@ async function abrir() {
   if (!ini || (location.hostname === 'localhost' && lsGet(K.cfgDev))) {
     app().innerHTML = '<div class="loading">Carregando…</div>';
     await carregarCfg();
-    if (dados) render();
+    if (dados) { render(); reenviarPendentes(true); }
     return;
   }
   if (ini) { cfg = ini; cfgFonte = 'salvo'; }
@@ -319,6 +357,7 @@ async function abrir() {
   await carregarCfg();
   if (dados && visual() !== antes) render();
   else if (dados) atualizarRodape();
+  if (dados) reenviarPendentes(true);
 }
 
 /* ============================================================ LISTA */
@@ -358,6 +397,7 @@ function viewHome() {
     if (e.target.checked) feitosAg[k] = 1; else delete feitosAg[k];
     salvarFeitosAg();
     renderAgenda();
+    enviarDia(k.split('|')[0]);
   };
 }
 
