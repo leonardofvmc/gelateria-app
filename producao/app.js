@@ -426,7 +426,7 @@ function renderAgenda() {
             <input type="checkbox" class="ag-chk" data-feito="${esc(ch)}" aria-label="marcar ${esc(r.nomeExib)} (${b.tit}) como feita" ${f ? 'checked' : ''}>
             ${(b.modo !== 'link' && !r.link)
               ? `<span class="ag-nome-solto">${esc(r.nomeExib)}</span>`   // só um aviso: sem link nem insumos
-              : `<a href="#/r/${encodeURIComponent(r.id)}">${esc(r.nomeExib)}<span class="ag-seta">›</span></a>`}</div>`;
+              : `<a href="#/${b.t === 'bater' ? 'bater' : 'r'}/${encodeURIComponent(r.id)}">${esc(r.nomeExib)}<span class="ag-seta">›</span></a>`}</div>`;
         }).join('')}
       </div>`).join('') : '<p class="muted small" style="margin:0">Nada programado para este dia.</p>';
     return `<details class="ap ag-dia${ehHoje ? ' hoje' : ''}" data-dia="${k}" ${agAbertos.has(k) ? 'open' : ''}>
@@ -541,7 +541,7 @@ function timerSetup(id, nome) {
 }
 
 /* ============================================================ RECEITA */
-function viewRecipe(id) {
+function viewRecipe(id, soTimer) {   // soTimer: tela do "Bater o gelato" — só cronômetro e avisos, sem insumos
   const r = receitasVisiveis().find((x) => x.id === id);
   if (!r) { location.hash = '#/'; return; }
   const vars = r.variantes || {};
@@ -551,7 +551,8 @@ function viewRecipe(id) {
   const ings = vars[creme] || [];
   const todosLemb = (r.lembretes || []).filter((t) => String(t || '').trim());
   const avisos = todosLemb.filter((t) => t.indexOf('ATENÇÃO') >= 0);        // destacados em vermelho
-  const lembretes = todosLemb.filter((t) => t.indexOf('ATENÇÃO') < 0);
+  // no "Bater o gelato" só ficam o aviso vermelho e a montagem da cuba (biscoito); o resto é da calda
+  const lembretes = todosLemb.filter((t) => t.indexOf('ATENÇÃO') < 0 && (!soTimer || t.indexOf('Biscoito') === 0));
   const comTimer = r.grupo !== 'Insumo';   // gelato vai para a produtora: 13 min
   const kg = LOTE_PADRAO;   // lote FIXO de 6 kg (decisão do gerente): o auxiliar não altera
   // preparo (grupo Insumo): o auxiliar digita o peso do 1º ingrediente e o resto é calculado na proporção
@@ -576,11 +577,11 @@ function viewRecipe(id) {
 
   ${lembretes.length ? `<div class="lembrete"><h3>Lembretes</h3><ul>${lembretes.map((t) => `<li>${esc(t)}</li>`).join('')}</ul></div>` : ''}
 
-  ${tem15 ? `<div class="seg" id="segCreme">
+  ${(tem15 && !soTimer) ? `<div class="seg" id="segCreme">
     <button data-v="20" class="${creme === '20' ? 'on' : ''}">${r.alt === 'masc30' ? 'Mascarpone de creme 35%' : 'Creme de leite 20%'}</button>
     <button data-v="15" class="${creme === '15' ? 'on' : ''}">${r.alt === 'masc30' ? 'Mascarpone de creme 30%' : 'Creme de leite 15%'}</button></div>` : ''}
 
-  <div class="card"><h3>⚖️ ${preparo ? 'Quantidade & ingredientes' : 'Lote & ingredientes'}</h3>
+  ${soTimer ? '' : `<div class="card"><h3>⚖️ ${preparo ? 'Quantidade & ingredientes' : 'Lote & ingredientes'}</h3>
     ${preparo ? `<label class="lab" for="baseG">${esc(ings[0].n)} que você vai usar (g)</label>
       <input class="inp" id="baseG" type="number" inputmode="decimal" min="1" step="any" value="${esc(String(baseG()))}" style="font-size:20px;font-weight:700">
       <p class="muted small" style="margin:6px 0 10px">Os outros ingredientes são calculados na hora.</p>`
@@ -589,11 +590,12 @@ function viewRecipe(id) {
       <button class="btn sec mini" id="limparCheckBtn">↺ Limpar marcações</button>
     </div>
     <table class="ix" id="tbl"></table>
-  </div>`;
+  </div>`}`;
 
   app().innerHTML = chrome(r.nomeExib, inner, { back: true });
   bindChrome();
   if (comTimer) timerSetup(r.id, r.nomeExib);
+  if (soTimer) return;   // sem tabela de insumos nem seletor de versão
 
   const tbl = $('#tbl');
   function renderTabela() {
@@ -656,7 +658,9 @@ function render() {
   if (!dados) { viewLogin(); return; }
   const h = (location.hash || '#/').split('?')[0];
   const m = h.match(/^#\/r\/(.+)$/);
-  if (m) { let id = m[1]; try { id = decodeURIComponent(id); } catch (e) { /* mantém */ } viewRecipe(id); }
+  const mb = h.match(/^#\/bater\/(.+)$/);
+  if (mb) { let id = mb[1]; try { id = decodeURIComponent(id); } catch (e) { /* mantém */ } viewRecipe(id, true); }
+  else if (m) { let id = m[1]; try { id = decodeURIComponent(id); } catch (e) { /* mantém */ } viewRecipe(id); }
   else viewHome();
   window.scrollTo(0, 0);
 }
