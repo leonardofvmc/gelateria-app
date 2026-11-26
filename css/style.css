@@ -352,6 +352,10 @@ details.ap td, details.ap th { border-bottom: 1px solid var(--line); padding: 7p
 details.ap th { font-weight: 700; color: var(--ink2); }
 details.ap ol, details.ap ul { padding-left: 20px; margin: 4px 0; }
 details.ap li { margin-bottom: 7px; }
+/* blocos recolhíveis dentro de cada dia da programação (dono) */
+details.ap details.agb > summary { font-size: 15px; }
+details.ap details.agb:not([open]) > summary::after { content: '＋'; }
+details.ap details.agb[open] > summary::after { content: '－'; }
 
 .muted { color: var(--ink2); font-size: 13px; }
 .small { font-size: 12.5px; }

@@ -470,6 +470,76 @@ function atualizarRodape() {
   el.textContent = partes.join(' · ');
 }
 
+/* ============================================================ CRONÔMETRO (13 min) */
+// Tempo de produção na produtora: 13 minutos, contagem regressiva que apita no fim.
+// O estado fica no aparelho (sobrevive a recarregar a página) e o relógio roda no app todo:
+// se o auxiliar sair da receita, o alarme ainda toca e aparece uma faixa para parar.
+const TIMER_MS = 13 * 60 * 1000;
+const K_TIMER = 'prod_timer';
+let TM = null;                       // { id, nome, end (ms, ou null), rest (ms), done }
+try { TM = JSON.parse(lsGet(K_TIMER) || 'null'); } catch (e) { TM = null; }
+let audioCtx = null, alarmIv = null;
+const timerSalva = () => lsSet(K_TIMER, JSON.stringify(TM));
+function destravaAudio() {          // precisa de um toque do usuário (iniciar) para o navegador liberar o som
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+  } catch (e) { /* sem som: fica o aviso visual e a vibração */ }
+}
+function beep() {
+  try {
+    destravaAudio();
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.type = 'square'; o.frequency.value = 880; g.gain.value = 0.3;
+    o.connect(g); g.connect(audioCtx.destination);
+    o.start(); o.stop(audioCtx.currentTime + 0.3);
+  } catch (e) { /* segue */ }
+  try { if (navigator.vibrate) navigator.vibrate([300, 150, 300]); } catch (e) { /* segue */ }
+}
+function alarmeParar() {
+  if (alarmIv) { clearInterval(alarmIv); alarmIv = null; }
+  const f = document.getElementById('tmFaixa'); if (f) f.remove();
+}
+function alarmeTocar() {
+  alarmeParar();
+  const f = document.createElement('div');
+  f.id = 'tmFaixa'; f.className = 'tm-faixa'; f.setAttribute('role', 'alert');
+  f.innerHTML = '<span>⏰ Tempo esgotado' + (TM && TM.nome ? ' — ' + esc(TM.nome) : '') + '</span><button class="btn" id="tmFaixaOk">Parar alarme</button>';
+  document.body.appendChild(f);
+  document.getElementById('tmFaixaOk').onclick = () => { alarmeParar(); if (TM) { TM.done = false; TM.rest = TIMER_MS; timerSalva(); } timerPinta(); };
+  let n = 0; beep();
+  alarmIv = setInterval(() => { n++; if (n >= 45) { alarmeParar(); return; } beep(); }, 1000);
+}
+const tmFmt = (ms) => { const s = Math.max(0, Math.ceil(ms / 1000)); return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0'); };
+function timerPinta() {              // atualiza o cartão do cronômetro, se estiver na tela
+  const clock = document.getElementById('tmClock'); if (!clock) return;
+  const go = document.getElementById('tmGo'), card = document.getElementById('timerCard');
+  const meu = TM && TM.id === card.dataset.id;
+  const rem = !meu ? TIMER_MS : (TM.end ? TM.end - Date.now() : TM.rest);
+  clock.textContent = tmFmt(rem);
+  card.classList.toggle('tm-run', !!(meu && TM.end));
+  card.classList.toggle('tm-done', !!(meu && TM.done));
+  go.textContent = !meu ? '▶ Iniciar' : (TM.end ? '⏸ Pausar' : (TM.done ? '▶ Reiniciar' : (TM.rest < TIMER_MS ? '▶ Continuar' : '▶ Iniciar')));
+}
+setInterval(() => {                  // relógio do app inteiro (a cada 250 ms)
+  if (TM && TM.end && Date.now() >= TM.end) {
+    TM.end = null; TM.rest = 0; TM.done = true; timerSalva(); alarmeTocar();
+  }
+  timerPinta();
+}, 250);
+function timerSetup(id, nome) {
+  const go = document.getElementById('tmGo'), rs = document.getElementById('tmReset'); if (!go) return;
+  go.onclick = () => {
+    destravaAudio();
+    if (!TM || TM.id !== id) TM = { id, nome, end: null, rest: TIMER_MS, done: false };
+    if (TM.end) { TM.rest = Math.max(0, TM.end - Date.now()); TM.end = null; }              // pausar
+    else { TM.nome = nome; TM.done = false; if (TM.rest <= 0) TM.rest = TIMER_MS; TM.end = Date.now() + TM.rest; }   // iniciar/continuar
+    alarmeParar(); timerSalva(); timerPinta();
+  };
+  rs.onclick = () => { alarmeParar(); TM = { id, nome, end: null, rest: TIMER_MS, done: false }; timerSalva(); timerPinta(); };
+  timerPinta();
+}
+
 /* ============================================================ RECEITA */
 function viewRecipe(id) {
   const r = receitasVisiveis().find((x) => x.id === id);
@@ -479,7 +549,10 @@ function viewRecipe(id) {
   const st = estadoDe(id);
   let creme = tem15 && st.creme === '15' ? '15' : (vars['20'] && vars['20'].length ? '20' : Object.keys(vars)[0]);
   const ings = vars[creme] || [];
-  const lembretes = (r.lembretes || []).filter((t) => String(t || '').trim());
+  const todosLemb = (r.lembretes || []).filter((t) => String(t || '').trim());
+  const avisos = todosLemb.filter((t) => t.indexOf('ATENÇÃO') >= 0);        // destacados em vermelho
+  const lembretes = todosLemb.filter((t) => t.indexOf('ATENÇÃO') < 0);
+  const comTimer = r.grupo !== 'Insumo';   // gelato vai para a produtora: 13 min
   const kg = LOTE_PADRAO;   // lote FIXO de 6 kg (decisão do gerente): o auxiliar não altera
   // preparo (grupo Insumo): o auxiliar digita o peso do 1º ingrediente e o resto é calculado na proporção
   const preparo = r.grupo === 'Insumo' && ings.length > 1 && Number(ings[0].g) > 0;
@@ -492,6 +565,14 @@ function viewRecipe(id) {
     <div class="recipe-title">${scoopBadge(r.grupo)}<span>${esc(r.nomeExib)}</span></div>
     <p class="muted small" style="margin:0">${esc(r.grupo || '')}</p>
   </div>
+
+  ${comTimer ? `<div class="card timer" id="timerCard" data-id="${esc(r.id)}">
+    <div class="tm-lab">⏱ Tempo de produção: <b>13 minutos</b></div>
+    <div class="tm-clock" id="tmClock">13:00</div>
+    <div class="btnrow"><button class="btn" id="tmGo">▶ Iniciar</button><button class="btn sec" id="tmReset">↺ Zerar</button></div>
+    <p class="muted small" style="margin:6px 0 0">Ao zerar o tempo, o celular apita.</p></div>` : ''}
+
+  ${avisos.length ? `<div class="aviso" role="alert">${avisos.map((t) => `<div>${esc(t)}</div>`).join('')}</div>` : ''}
 
   ${lembretes.length ? `<div class="lembrete"><h3>Lembretes</h3><ul>${lembretes.map((t) => `<li>${esc(t)}</li>`).join('')}</ul></div>` : ''}
 
@@ -512,6 +593,7 @@ function viewRecipe(id) {
 
   app().innerHTML = chrome(r.nomeExib, inner, { back: true });
   bindChrome();
+  if (comTimer) timerSetup(r.id, r.nomeExib);
 
   const tbl = $('#tbl');
   function renderTabela() {
@@ -524,7 +606,7 @@ function viewRecipe(id) {
       if (feito) { soma += g; nMarc++; }
       return `<tr class="${feito ? 'ing-feito' : ''}">
         <td>${esc(i.n)}${i.fim ? ' <span class="muted small">(no fim)</span>' : ''}</td>
-        <td class="v" style="text-align:right">${fmtG(g)}</td>
+        <td class="v" style="text-align:right">${(!preparo && Number(i.g) === 0 && i.fim) ? '<b>1 pacote por cuba</b>' : fmtG(g)}</td>
         <td style="text-align:center"><input type="checkbox" class="ing-check" data-idx="${idx}" aria-label="marcar ${esc(i.n)}" ${feito ? 'checked' : ''}></td></tr>`;
     }).join('');
     const completo = nMarc > 0 && Math.abs(soma - total) < 0.5;

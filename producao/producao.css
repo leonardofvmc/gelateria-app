@@ -90,3 +90,21 @@ html, body { overflow-x: hidden; }
 :root[data-theme="dark"] .ag-bloco.descongelar .ag-btit { color: #c9aef0; }
 :root[data-theme="dark"] .ag-bloco.insumos { background: #2a251b; border-color: #a99a78; }
 :root[data-theme="dark"] .ag-bloco.insumos .ag-btit { color: #d1c3a0; }
+
+/* aviso destacado (ex.: tirar as favas antes da produtora) */
+.aviso { border: 3px solid #c0392b; background: #fdeaea; color: #7a1b12; border-radius: 14px; padding: 12px 14px; margin: 0 0 12px; font-weight: 800; font-size: 16px; line-height: 1.35; }
+.aviso div + div { margin-top: 6px; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .aviso { background: #3a1614; color: #ffb4a8; border-color: #e0584a; } }
+:root[data-theme="dark"] .aviso { background: #3a1614; color: #ffb4a8; border-color: #e0584a; }
+
+/* cronômetro de 13 minutos no topo das receitas */
+.timer { text-align: center; }
+.timer .tm-lab { font-size: 15px; }
+.timer .tm-clock { font-size: 56px; font-weight: 800; letter-spacing: 2px; font-variant-numeric: tabular-nums; line-height: 1.1; margin: 4px 0 10px; }
+.timer.tm-run .tm-clock { color: var(--accent); }
+.timer.tm-done { outline: 3px solid #c0392b; }
+.timer.tm-done .tm-clock { color: #c0392b; animation: tm-pisca 1s steps(2, start) infinite; }
+@keyframes tm-pisca { to { opacity: .35; } }
+.timer .btnrow { justify-content: center; }
+.tm-faixa { position: fixed; left: 0; right: 0; top: 0; z-index: 99; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 16px; background: #c0392b; color: #fff; font-weight: 800; font-size: 17px; }
+.tm-faixa .btn { background: #fff; color: #c0392b; }
