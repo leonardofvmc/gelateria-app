@@ -481,3 +481,5 @@ details.ing-obs > span { display: block; margin-top: 2px; }
   .nav a { font-size: 8px; letter-spacing: -.35px; }
   .nav a svg { width: 17px; height: 17px; }
 }
+
+.matur-l { display: flex; justify-content: space-between; gap: 10px; padding: 7px 0; border-top: 1px solid rgba(127,127,127,.25); }

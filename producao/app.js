@@ -184,7 +184,7 @@ async function carregarCfg() { await Promise.all([carregarCfgBase(), carregarAge
 const feitosAg = (() => {
   let o = {};
   try { o = JSON.parse(lsGet(K.feitos) || '{}') || {}; } catch (e) { o = {}; }
-  const corte = Date.now() - 30 * 86400000;
+  const corte = Date.now() - 60 * 86400000;
   Object.keys(o).forEach((k) => { const t = Date.parse(k.split('|')[0]); if (!(t > corte)) delete o[k]; });
   return o;
 })();
@@ -232,7 +232,7 @@ const isoLocal = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStar
 /* ---------- recebe o que os OUTROS aparelhos marcaram (o gerente também abre este app) ----------
    A fonte da verdade é a união dos documentos da nuvem (um por dia e por aparelho). Desmarcar tira a marca
    de todos eles. Datas com envio pendente, ou mexidas há menos de 20 s, não são sobrescritas. */
-const FEITOS_JAN = 21;                  // dias para trás
+const FEITOS_JAN = 60;                  // dias para trás
 let remotos = [];                       // [{ id, iso, itens:[chaves 'tipo|id'] }] da última leitura
 const editadoEm = {};                   // iso -> quando ESTE aparelho mexeu
 let sincronizando = false;
@@ -298,32 +298,41 @@ async function tirarMarcaRemota(iso, sub) {
   }
 }
 
-/* ---------- caldas maturando na geladeira: calda feita e ainda não batida ----------
-   Cada "Bater o gelato" consome a calda pendente mais antiga do mesmo sabor feita até aquele dia.
-   Dias = hoje − dia em que a calda foi marcada (mesmo dia = 0). */
-function caldasMaturando() {
-  const hoje = isoLocal(new Date()), ev = {};
-  Object.keys(feitosAg).forEach((k) => {
-    const p = k.split('|'), d = p[0], t = p[1], id = p.slice(2).join('|');
-    if (d > hoje || (t !== 'calda' && t !== 'bater')) return;
-    (ev[id] = ev[id] || { c: [], b: [] })[t === 'calda' ? 'c' : 'b'].push(d);
+/* ---------- caldas na geladeira e no freezer ----------
+   Eventos marcados pelo auxiliar, em ordem de data: calda (nasce na geladeira), congelar, descongelar (volta à geladeira
+   e a contagem de maturação recomeça do zero) e bater (consome a calda mais antiga do sabor). */
+function calcCaldas(evs, hoje) {
+  const ORD = { descongelar: 0, calda: 1, congelar: 2, bater: 3 };
+  const dif = (a, b) => Math.max(0, Math.round((Date.parse(b + 'T00:00:00') - Date.parse(a + 'T00:00:00')) / 86400000));
+  const por = {};
+  evs.filter((e) => e.d <= hoje && e.t in ORD).sort((x, y) => (x.d < y.d ? -1 : x.d > y.d ? 1 : ORD[x.t] - ORD[y.t])).forEach((e) => {
+    const L = (por[e.id] = por[e.id] || []);
+    if (e.t === 'calda') L.push({ est: 'gel', desde: e.d, gelAntes: 0, cong: 0 });
+    else if (e.t === 'congelar') { const b = L.find((x) => x.est === 'gel'); if (b) { b.gelAntes += dif(b.desde, e.d); b.est = 'cong'; b.desde = e.d; } }
+    else if (e.t === 'descongelar') { const b = L.find((x) => x.est === 'cong'); if (b) { b.cong += dif(b.desde, e.d); b.est = 'gel'; b.desde = e.d; } }
+    else { let i = L.findIndex((x) => x.est === 'gel'); if (i < 0) i = L.findIndex((x) => x.est === 'cong'); if (i >= 0) L.splice(i, 1); }
   });
-  const t0 = Date.parse(hoje + 'T00:00:00'), out = [];
-  Object.keys(ev).forEach((id) => {
-    const pend = ev[id].c.sort();
-    ev[id].b.sort().forEach((bd) => { const i = pend.findIndex((cd) => cd <= bd); if (i >= 0) pend.splice(i, 1); });
-    pend.forEach((cd) => out.push({ id, dias: Math.max(0, Math.round((t0 - Date.parse(cd + 'T00:00:00')) / 86400000)) }));
-  });
-  return out.sort((a, b) => b.dias - a.dias);
+  const out = [];
+  Object.keys(por).forEach((id) => por[id].forEach((b) => out.push({ id, est: b.est, dias: dif(b.desde, hoje), cong: b.cong, gelAntes: b.gelAntes })));
+  return out.sort((a, b) => (a.est === b.est ? b.dias - a.dias : a.est === 'gel' ? -1 : 1));
+}
+function caldaLinha(x, nome) {
+  const p = (n) => (n === 1 ? '1 dia' : n + ' dias');
+  const topo = x.est === 'gel' ? 'na geladeira há ' + p(x.dias) : '❄️ congelada há ' + p(x.dias);
+  const sub = x.est === 'gel'
+    ? (x.cong > 0 ? (x.gelAntes > 0 ? 'maturou ' + p(x.gelAntes) + ' antes de congelar · ' : '') + 'ficou ' + p(x.cong) + ' congelada' : '')
+    : (x.gelAntes > 0 ? 'maturou ' + p(x.gelAntes) + ' na geladeira antes de congelar' : 'congelada no mesmo dia em que foi feita');
+  return `<div class="matur-l"><span>${esc(nome)}${sub ? `<small class="muted" style="display:block">${sub}</small>` : ''}</span><b style="white-space:nowrap;text-align:right">${topo}</b></div>`;
 }
 function renderMatur() {
   const el = $('#matur'); if (!el) return;
   const vis = {}; receitasVisiveis().forEach((r) => { vis[r.id] = r; });
-  const lista = caldasMaturando().filter((x) => vis[x.id]);
-  el.innerHTML = `<div class="card matur"><div class="matur-t">🥣 Caldas maturando na geladeira</div>${lista.length
-    ? lista.map((x) => `<div class="matur-l"><span>${esc(vis[x.id].nomeExib)}</span><b>${x.dias === 0 ? 'feita hoje · 0 dias' : x.dias === 1 ? '1 dia' : x.dias + ' dias'}</b></div>`).join('')
+  const evs = Object.keys(feitosAg).map((k) => { const p = k.split('|'); return { d: p[0], t: p[1], id: p.slice(2).join('|') }; });
+  const lista = calcCaldas(evs, isoLocal(new Date())).filter((x) => vis[x.id]);
+  el.innerHTML = `<div class="card matur"><div class="matur-t">🥣 Caldas: geladeira e freezer</div>${lista.length
+    ? lista.map((x) => caldaLinha(x, vis[x.id].nomeExib)).join('')
     : '<p class="muted small" style="margin:6px 0 0">Nenhuma calda esperando para ser batida.</p>'}
-    <p class="muted small" style="margin:8px 0 0">Conta desde que a calda foi marcada como feita até o sabor ser marcado em “Bater o gelato”.</p></div>`;
+    <p class="muted small" style="margin:8px 0 0">Conta desde que a calda foi marcada como feita até o sabor ser marcado em “Bater o gelato”. Se foi congelada, mostra os dias no freezer; ao descongelar, a contagem na geladeira recomeça.</p></div>`;
 }
 setInterval(() => {                     // mantém as marcações em dia entre os aparelhos
   if (document.hidden || !dados || !$('#agenda')) return;
