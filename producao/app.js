@@ -228,6 +228,110 @@ async function reenviarPendentes(recentes) {
 }
 window.addEventListener('online', () => { if (dados) reenviarPendentes(false); });
 const isoLocal = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+
+/* ---------- recebe o que os OUTROS aparelhos marcaram (o gerente também abre este app) ----------
+   A fonte da verdade é a união dos documentos da nuvem (um por dia e por aparelho). Desmarcar tira a marca
+   de todos eles. Datas com envio pendente, ou mexidas há menos de 20 s, não são sobrescritas. */
+const FEITOS_JAN = 21;                  // dias para trás
+let remotos = [];                       // [{ id, iso, itens:[chaves 'tipo|id'] }] da última leitura
+const editadoEm = {};                   // iso -> quando ESTE aparelho mexeu
+let sincronizando = false;
+async function lerRemotos() {
+  const out = []; let tok = '';
+  for (let n = 0; n < 6; n++) {
+    const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 10000);
+    let j;
+    try {
+      const r = await fetch(FEITOS_URL.replace(/\/$/, '') + '?pageSize=300&key=' + FEITOS_KEY + (tok ? '&pageToken=' + encodeURIComponent(tok) : ''), { signal: ctl.signal });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      j = await r.json();
+    } finally { clearTimeout(t); }
+    (j.documents || []).forEach((d) => {
+      const f = ((((d.fields || {}).itens || {}).mapValue || {}).fields) || {};
+      out.push({ id: String(d.name || '').split('/').pop(), itens: Object.keys(f).filter((x) => f[x] && f[x].booleanValue === true) });
+    });
+    tok = j.nextPageToken || '';
+    if (!tok) break;
+  }
+  return out;
+}
+async function sincronizarFeitos() {
+  if (!dados || sincronizando) return false;
+  if (location.hostname === 'localhost' && !lsGet('prod_sync_teste')) return false;
+  sincronizando = true;
+  try {
+    const lista = await lerRemotos();
+    const lim = isoLocal(new Date(Date.now() - FEITOS_JAN * 86400000));
+    const pend = new Set(pendentes());
+    const uniao = {}; remotos = [];
+    for (const d of lista) {
+      const iso = d.id.split('_')[0];
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(iso) || iso < lim) continue;
+      remotos.push({ id: d.id, iso, itens: d.itens });
+      const u = (uniao[iso] = uniao[iso] || new Set()); d.itens.forEach((x) => u.add(iso + '|' + x));
+    }
+    const datas = new Set(Object.keys(uniao));
+    Object.keys(feitosAg).forEach((k) => { const d = k.split('|')[0]; if (d >= lim) datas.add(d); });
+    let mudou = false;
+    for (const iso of datas) {
+      if (pend.has(iso) || Date.now() - (editadoEm[iso] || 0) < 20000) continue;
+      const alvo = uniao[iso] || new Set();
+      Object.keys(feitosAg).forEach((k) => { if (k.startsWith(iso + '|') && !alvo.has(k)) { delete feitosAg[k]; mudou = true; } });
+      alvo.forEach((k) => { if (!feitosAg[k]) { feitosAg[k] = 1; mudou = true; } });
+    }
+    if (mudou) salvarFeitosAg();
+    return mudou;
+  } catch (e) { return null; }           // null = não consegui ler (sem internet)
+  finally { sincronizando = false; }
+}
+// ao desmarcar, tira a marca também dos documentos dos outros aparelhos
+async function tirarMarcaRemota(iso, sub) {
+  const meu = iso + '_' + idAparelho();
+  for (const d of remotos) {
+    if (d.iso !== iso || d.id === meu || !d.itens.includes(sub)) continue;
+    d.itens = d.itens.filter((x) => x !== sub);
+    const itens = {}; d.itens.forEach((x) => { itens[x] = { booleanValue: true }; });
+    try {
+      await fetch(FEITOS_URL + d.id + '?key=' + FEITOS_KEY, { method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fields: { itens: { mapValue: { fields: itens } }, atualizadoEm: { stringValue: new Date().toISOString() } } }) });
+    } catch (e) { /* sem internet: a marca volta na próxima leitura */ }
+  }
+}
+
+/* ---------- caldas maturando na geladeira: calda feita e ainda não batida ----------
+   Cada "Bater o gelato" consome a calda pendente mais antiga do mesmo sabor feita até aquele dia.
+   Dias = hoje − dia em que a calda foi marcada (mesmo dia = 0). */
+function caldasMaturando() {
+  const hoje = isoLocal(new Date()), ev = {};
+  Object.keys(feitosAg).forEach((k) => {
+    const p = k.split('|'), d = p[0], t = p[1], id = p.slice(2).join('|');
+    if (d > hoje || (t !== 'calda' && t !== 'bater')) return;
+    (ev[id] = ev[id] || { c: [], b: [] })[t === 'calda' ? 'c' : 'b'].push(d);
+  });
+  const t0 = Date.parse(hoje + 'T00:00:00'), out = [];
+  Object.keys(ev).forEach((id) => {
+    const pend = ev[id].c.sort();
+    ev[id].b.sort().forEach((bd) => { const i = pend.findIndex((cd) => cd <= bd); if (i >= 0) pend.splice(i, 1); });
+    pend.forEach((cd) => out.push({ id, dias: Math.max(0, Math.round((t0 - Date.parse(cd + 'T00:00:00')) / 86400000)) }));
+  });
+  return out.sort((a, b) => b.dias - a.dias);
+}
+function renderMatur() {
+  const el = $('#matur'); if (!el) return;
+  const vis = {}; receitasVisiveis().forEach((r) => { vis[r.id] = r; });
+  const lista = caldasMaturando().filter((x) => vis[x.id]);
+  el.innerHTML = `<div class="card matur"><div class="matur-t">🥣 Caldas maturando na geladeira</div>${lista.length
+    ? lista.map((x) => `<div class="matur-l"><span>${esc(vis[x.id].nomeExib)}</span><b>${x.dias === 0 ? 'feita hoje · 0 dias' : x.dias === 1 ? '1 dia' : x.dias + ' dias'}</b></div>`).join('')
+    : '<p class="muted small" style="margin:6px 0 0">Nenhuma calda esperando para ser batida.</p>'}
+    <p class="muted small" style="margin:8px 0 0">Conta desde que a calda foi marcada como feita até o sabor ser marcado em “Bater o gelato”.</p></div>`;
+}
+setInterval(() => {                     // mantém as marcações em dia entre os aparelhos
+  if (document.hidden || !dados || !$('#agenda')) return;
+  sincronizarFeitos().then((m) => { if (m) renderAgenda(); });
+}, 20000);
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && dados && $('#agenda')) sincronizarFeitos().then((m) => { if (m) renderAgenda(); });
+});
 // data (desta semana, começando na segunda) do dia i
 function dataDoDia(i) {
   const h = new Date(); const hoje = (h.getDay() + 6) % 7;
@@ -348,7 +452,7 @@ async function abrir() {
   if (!ini || (location.hostname === 'localhost' && lsGet(K.cfgDev))) {
     app().innerHTML = '<div class="loading">Carregando…</div>';
     await carregarCfg();
-    if (dados) { render(); reenviarPendentes(true); }
+    if (dados) { render(); sincronizarFeitos().then((m) => { if (m) renderAgenda(); reenviarPendentes(m === null); }); }
     return;
   }
   if (ini) { cfg = ini; cfgFonte = 'salvo'; }
@@ -359,13 +463,14 @@ async function abrir() {
   await carregarCfg();
   if (dados && visual() !== antes) render();
   else if (dados) atualizarRodape();
-  if (dados) reenviarPendentes(true);
+  if (dados) sincronizarFeitos().then((m) => { if (m) renderAgenda(); reenviarPendentes(m === null); });
 }
 
 /* ============================================================ LISTA */
 function viewHome() {
   const inner = `
     <h2 class="sect" style="margin-top:4px">📅 Programação da semana</h2>
+    <div id="matur"></div>
     <div id="agenda"></div>
     <h2 class="sect">Todas as receitas</h2>
     <input class="inp" id="q" type="search" placeholder="🔎 Buscar sabor…" value="${esc(filtro.q)}" autocomplete="off">
@@ -396,10 +501,12 @@ function viewHome() {
   ag.onchange = (e) => {
     const k = e.target.dataset && e.target.dataset.feito;
     if (!k) return;
-    if (e.target.checked) feitosAg[k] = 1; else delete feitosAg[k];
+    const iso = k.split('|')[0];
+    editadoEm[iso] = Date.now();
+    if (e.target.checked) feitosAg[k] = 1; else { delete feitosAg[k]; tirarMarcaRemota(iso, k.slice(iso.length + 1)); }
     salvarFeitosAg();
     renderAgenda();
-    enviarDia(k.split('|')[0]);
+    enviarDia(iso);
   };
 }
 
@@ -433,6 +540,7 @@ function renderAgenda() {
       <summary><span class="ag-nome">${nome}</span>${ehHoje ? '<span class="ag-tag">Hoje</span>' : `<span class="ag-data">${dm}</span>`}${cont}</summary>
       <div class="apc">${corpo}</div></details>`;
   }).join('');
+  renderMatur();
 }
 
 function renderItens() {
@@ -553,7 +661,7 @@ function viewRecipe(id, soTimer) {   // soTimer: tela do "Bater o gelato" — s�
   const avisos = todosLemb.filter((t) => t.indexOf('ATENÇÃO') >= 0);        // destacados em vermelho
   // no "Bater o gelato" só ficam o aviso vermelho e a montagem da cuba (biscoito); o resto é da calda
   const lembretes = todosLemb.filter((t) => t.indexOf('ATENÇÃO') < 0 && (!soTimer || t.indexOf('Biscoito') === 0));
-  const comTimer = r.grupo !== 'Insumo';   // gelato vai para a produtora: 13 min
+  const comTimer = !!soTimer && r.grupo !== 'Insumo';   // cronômetro e aviso das favas só na tela de Bater o gelato (produtora)
   const kg = LOTE_PADRAO;   // lote FIXO de 6 kg (decisão do gerente): o auxiliar não altera
   // preparo (grupo Insumo): o auxiliar digita o peso do 1º ingrediente e o resto é calculado na proporção
   const preparo = r.grupo === 'Insumo' && ings.length > 1 && Number(ings[0].g) > 0;
@@ -573,7 +681,7 @@ function viewRecipe(id, soTimer) {   // soTimer: tela do "Bater o gelato" — s�
     <div class="btnrow"><button class="btn" id="tmGo">▶ Iniciar</button><button class="btn sec" id="tmReset">↺ Zerar</button></div>
     <p class="muted small" style="margin:6px 0 0">Ao zerar o tempo, o celular apita.</p></div>` : ''}
 
-  ${avisos.length ? `<div class="aviso" role="alert">${avisos.map((t) => `<div>${esc(t)}</div>`).join('')}</div>` : ''}
+  ${(soTimer && avisos.length) ? `<div class="aviso" role="alert">${avisos.map((t) => `<div>${esc(t)}</div>`).join('')}</div>` : ''}
 
   ${lembretes.length ? `<div class="lembrete"><h3>Lembretes</h3><ul>${lembretes.map((t) => `<li>${esc(t)}</li>`).join('')}</ul></div>` : ''}
 
@@ -608,7 +716,7 @@ function viewRecipe(id, soTimer) {   // soTimer: tela do "Bater o gelato" — s�
       if (feito) { soma += g; nMarc++; }
       return `<tr class="${feito ? 'ing-feito' : ''}">
         <td>${esc(i.n)}${i.fim ? ' <span class="muted small">(no fim)</span>' : ''}</td>
-        <td class="v" style="text-align:right">${(!preparo && Number(i.g) === 0 && i.fim) ? '<b>1 pacote por cuba</b>' : fmtG(g)}</td>
+        <td class="v" style="text-align:right">${(!preparo && Number(i.g) === 0 && i.fim) ? '<b>100 g por cuba</b>' : fmtG(g)}</td>
         <td style="text-align:center"><input type="checkbox" class="ing-check" data-idx="${idx}" aria-label="marcar ${esc(i.n)}" ${feito ? 'checked' : ''}></td></tr>`;
     }).join('');
     const completo = nMarc > 0 && Math.abs(soma - total) < 0.5;

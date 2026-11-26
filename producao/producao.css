@@ -108,3 +108,9 @@ html, body { overflow-x: hidden; }
 .timer .btnrow { justify-content: center; }
 .tm-faixa { position: fixed; left: 0; right: 0; top: 0; z-index: 99; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 16px; background: #c0392b; color: #fff; font-weight: 800; font-size: 17px; }
 .tm-faixa .btn { background: #fff; color: #c0392b; }
+
+/* caldas maturando */
+.matur { padding: 12px 14px; }
+.matur-t { font-weight: 800; font-size: 16px; margin-bottom: 4px; }
+.matur-l { display: flex; justify-content: space-between; gap: 10px; padding: 7px 0; border-top: 1px solid rgba(127,127,127,.25); }
+.matur-l b { white-space: nowrap; }
