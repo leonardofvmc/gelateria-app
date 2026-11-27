@@ -114,3 +114,4 @@ html, body { overflow-x: hidden; }
 .matur-t { font-weight: 800; font-size: 16px; margin-bottom: 4px; }
 .matur-l { display: flex; justify-content: space-between; gap: 10px; padding: 7px 0; border-top: 1px solid rgba(127,127,127,.25); }
 .matur-l b { white-space: nowrap; }
+.ag-onde { flex-basis: 100%; display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; color: var(--ink2); }

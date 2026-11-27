@@ -312,8 +312,18 @@ window.CLOUD = (function () {
       }
     }
     const doc = { dias, atualizadoEm: new Date().toISOString() };
-    await S.setDoc(S.doc(db, 'producaoPublico', 'agenda'), doc);
+    // mergeFields: não apaga as trocas da escala (campo "ajustes")
+    await S.setDoc(S.doc(db, 'producaoPublico', 'agenda'), doc, { mergeFields: ['dias', 'atualizadoEm'] });
     return doc;
+  }
+  // trocas manuais do dia do auxiliar na escala: { 'AAAA-MM-DD': código }, só códigos (doc público, sem nomes)
+  const CODIGOS_ESCALA = ['P', 'C', 'M', 'M1', 'M6', 'L', 'F'];
+  async function saveProducaoAjustes(aj) {
+    if (!isDono()) throw new Error('Só o dono pode alterar a escala do auxiliar.');
+    const ajustes = {};
+    Object.keys(aj || {}).filter((k) => /^\d{4}-\d{2}-\d{2}$/.test(k) && CODIGOS_ESCALA.includes(aj[k])).slice(-120)
+      .forEach((k) => { ajustes[k] = aj[k]; });
+    await S.setDoc(S.doc(db, 'producaoPublico', 'agenda'), { ajustes, atualizadoEm: new Date().toISOString() }, { mergeFields: ['ajustes', 'atualizadoEm'] });
   }
 
   // o que o auxiliar marcou como feito: [{ id:'AAAA-MM-DD_aparelho', itens:[chaves], atualizadoEm }]
@@ -348,6 +358,6 @@ window.CLOUD = (function () {
            reenviarVerificacao, recarregarUsuario, getPinApp, setPinApp,
            isDono, gid, acesso, podeEditar, prepararAcesso,
            listarAcessos, definirAcesso, removerAcesso,
-           getProducaoConfig, saveProducaoConfig, getProducaoAgenda, saveProducaoAgenda, getProducaoFeitos,
+           getProducaoConfig, saveProducaoConfig, getProducaoAgenda, saveProducaoAgenda, saveProducaoAjustes, getProducaoFeitos,
            getAll, getAllComId, getDocData, subscribe, put, del, batchSet, clearColl };
 })();

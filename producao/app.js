@@ -154,7 +154,63 @@ function lerAgendaRest(doc) {
       out[k][t] = vals.map((x) => x && x.stringValue).filter((x) => typeof x === 'string').map((x) => x.slice(0, 80)).slice(0, 40);
     });
   });
+  // trocas do dia do auxiliar feitas pelo gerente na escala: { 'AAAA-MM-DD': código }
+  const aj = ((((doc || {}).fields || {}).ajustes || {}).mapValue || {}).fields || {};
+  out.ajustes = {};
+  Object.keys(aj).forEach((d) => {
+    const v = aj[d] && aj[d].stringValue;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(d) && ESC_COD[v]) out.ajustes[d] = v;
+  });
   return out;
+}
+
+/* ---------- onde o auxiliar estará no dia (escala vem cifrada no dados.bin; trocas do gerente por cima) ---------- */
+const ESC_COD = {
+  P: ['prod', 'Produção', '10:00–18:20'],
+  C: ['gelateria', 'Gelateria · folga da Clara', null],
+  T: ['gelateria', 'Treinamento na gelateria', null],
+  M: ['manut', 'Manutenção da pousada', '13:40–22:00'],
+  M1: ['manut', 'Manutenção da pousada', '13:00–21:20'],
+  M6: ['manut', 'Manutenção da pousada', '06:00–14:20'],
+  L: ['livre', 'A definir', ''],
+  F: ['folga', 'Folga', ''],
+};
+// no dia em que cobre a Clara, faz o horário dela: 13:00–21:30 (seg–qui) ou 13:00–22:00 (sex–dom)
+const horaGelateria = (iso) => { const w = new Date(iso + 'T12:00:00').getDay(); return (w === 5 || w === 6 || w === 0) ? '13:00–22:00' : '13:00–21:30'; };
+function ondeEstou(iso) {
+  const cod = ((agenda && agenda.ajustes) || {})[iso] || ((dados && dados.escala) || {})[iso];
+  const x = ESC_COD[cod];
+  if (!x) return null;
+  return { g: x[0], txt: x[1], horas: x[2] === null ? horaGelateria(iso) : x[2] };
+}
+const chipOnde = (o) => o ? `<span class="esc-chip g-${o.g}">${esc(o.txt)}${o.horas ? ` <small>${o.horas}</small>` : ''}</span>` : '';
+
+/* ---------- resumo da semana: caldas e gelatos batidos (feitos + programados de hoje em diante) ---------- */
+function resumoSemana() {
+  const vis = {}; receitasVisiveis().forEach((r) => { vis[r.id] = r; });
+  const hoje = isoLocal(new Date());
+  const bloco = (t, titulo) => {
+    const por = {}; let f = 0, p = 0;
+    DIAS.forEach(([k], i) => {
+      const { iso } = dataDoDia(i);
+      const ids = new Set(((agenda[k] || {})[t]) || []);
+      Object.keys(feitosAg).forEach((ch) => { if (ch.startsWith(iso + '|' + t + '|')) ids.add(ch.slice(iso.length + t.length + 2)); });
+      ids.forEach((id) => {
+        if (!vis[id]) return;
+        const ok = !!feitosAg[iso + '|' + t + '|' + id];
+        if (!ok && iso < hoje) return;
+        const o = (por[id] = por[id] || { f: 0, p: 0 });
+        if (ok) { o.f++; f++; } else { o.p++; p++; }
+      });
+    });
+    const tot = f + p;
+    const linhas = Object.keys(por).sort((a, b) => (por[b].f + por[b].p) - (por[a].f + por[a].p) || vis[a].nomeExib.localeCompare(vis[b].nomeExib))
+      .map((id) => `<div class="res-l"><span>${esc(vis[id].nomeExib)}</span><span>${por[id].f + por[id].p}${por[id].f ? ` <small class="muted" style="font-weight:600">(${por[id].f} ✓)</small>` : ''}</span></div>`).join('');
+    return `<h4>${titulo}: ${tot} lote${tot === 1 ? '' : 's'}${tot ? ` · ${tot * LOTE_PADRAO} kg` : ''}</h4>
+      <div class="muted small" style="margin-bottom:4px">${f} feito${f === 1 ? '' : 's'} · ${p} por fazer</div>
+      ${linhas || '<div class="muted small">Nada nesta semana.</div>'}`;
+  };
+  return `<div class="card res-sem"><div style="font-weight:800">📊 Resumo da semana</div>${bloco('calda', '🥣 Caldas')}${bloco('bater', '🍨 Gelatos batidos')}</div>`;
 }
 function agendaSalva() {
   try { const o = JSON.parse(lsGet(K.agenda) || 'null'); return o && typeof o === 'object' ? o : {}; } catch (e) { return {}; }
@@ -479,8 +535,10 @@ async function abrir() {
 function viewHome() {
   const inner = `
     <h2 class="sect" style="margin-top:4px">📅 Programação da semana</h2>
-    <div id="matur"></div>
+    <div id="hojeOnde"></div>
     <div id="agenda"></div>
+    <div id="resumo"></div>
+    <div id="matur"></div>
     <h2 class="sect">Todas as receitas</h2>
     <input class="inp" id="q" type="search" placeholder="🔎 Buscar sabor…" value="${esc(filtro.q)}" autocomplete="off">
     <div class="seg" id="segCat">${['Todos', 'Creme', 'Fitness', 'Sorbet'].concat(receitasVisiveis().some((r) => r.grupo === 'Insumo') ? ['Insumo'] : []).map((c) =>
@@ -545,10 +603,15 @@ function renderAgenda() {
               : `<a href="#/${b.t === 'bater' ? 'bater' : 'r'}/${encodeURIComponent(r.id)}">${esc(r.nomeExib)}<span class="ag-seta">›</span></a>`}</div>`;
         }).join('')}
       </div>`).join('') : '<p class="muted small" style="margin:0">Nada programado para este dia.</p>';
+    const onde = ondeEstou(iso);
     return `<details class="ap ag-dia${ehHoje ? ' hoje' : ''}" data-dia="${k}" ${agAbertos.has(k) ? 'open' : ''}>
-      <summary><span class="ag-nome">${nome}</span>${ehHoje ? '<span class="ag-tag">Hoje</span>' : `<span class="ag-data">${dm}</span>`}${cont}</summary>
+      <summary style="flex-wrap:wrap;row-gap:4px"><span class="ag-nome">${nome}</span>${ehHoje ? '<span class="ag-tag">Hoje</span>' : `<span class="ag-data">${dm}</span>`}${cont}
+        ${onde ? `<span class="ag-onde">📍 ${chipOnde(onde)}</span>` : ''}</summary>
       <div class="apc">${corpo}</div></details>`;
   }).join('');
+  const h = ondeEstou(isoLocal(new Date())), hEl = $('#hojeOnde');
+  if (hEl) hEl.innerHTML = h ? `<div class="card" style="padding:12px 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap"><b>📍 Hoje você está em:</b> ${chipOnde(h)}</div>` : '';
+  const rEl = $('#resumo'); if (rEl) rEl.innerHTML = resumoSemana();
   renderMatur();
 }
 
