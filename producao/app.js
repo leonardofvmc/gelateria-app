@@ -165,23 +165,28 @@ function lerAgendaRest(doc) {
 }
 
 /* ---------- onde o auxiliar estará no dia (escala vem cifrada no dados.bin; trocas do gerente por cima) ---------- */
+/* horários: [5x1 (7h20 + 1h de intervalo), 5x2 a partir de INICIO_5X2 (8h48 + 1h)] — mesmos de js/escala.js */
+const INICIO_5X2 = '2026-12-14';
 const ESC_COD = {
-  P: ['prod', 'Produção', '10:00–18:20'],
+  P: ['prod', 'Produção', ['10:15–18:35', '10:15–20:03']],
   C: ['gelateria', 'Gelateria · folga da Clara', null],
   T: ['gelateria', 'Treinamento na gelateria', null],
-  M: ['manut', 'Manutenção da pousada', '13:40–22:00'],
-  M1: ['manut', 'Manutenção da pousada', '13:00–21:20'],
-  M6: ['manut', 'Manutenção da pousada', '06:00–14:20'],
-  L: ['livre', 'A definir', ''],
-  F: ['folga', 'Folga', ''],
+  M: ['manut', 'Manutenção da pousada', ['13:40–22:00', '12:12–22:00']],
+  M1: ['manut', 'Manutenção da pousada', ['13:00–21:20', '12:12–22:00']],
+  M6: ['manut', 'Manutenção da pousada', ['06:00–14:20', '06:00–15:48']],
+  L: ['livre', 'A definir', ['', '']],
+  F: ['folga', 'Folga', ['', '']],
 };
-// no dia em que cobre a Clara, faz o horário dela: 13:00–21:30 (seg–qui) ou 13:00–22:00 (sex–dom)
-const horaGelateria = (iso) => { const w = new Date(iso + 'T12:00:00').getDay(); return (w === 5 || w === 6 || w === 0) ? '13:00–22:00' : '13:00–21:30'; };
+// no dia em que cobre a Clara, faz o horário dela: 5x1 13:00–21:30 (seg–qui) / 13:00–22:00 (sex–dom); 5x2 12:12–22:00
+const horaGelateria = (iso) => {
+  if (iso >= INICIO_5X2) return '12:12–22:00';
+  const w = new Date(iso + 'T12:00:00').getDay(); return (w === 5 || w === 6 || w === 0) ? '13:00–22:00' : '13:00–21:30';
+};
 function ondeEstou(iso) {
   const cod = ((agenda && agenda.ajustes) || {})[iso] || ((dados && dados.escala) || {})[iso];
   const x = ESC_COD[cod];
   if (!x) return null;
-  return { g: x[0], txt: x[1], horas: x[2] === null ? horaGelateria(iso) : x[2] };
+  return { g: x[0], txt: x[1], horas: x[2] === null ? horaGelateria(iso) : x[2][iso >= INICIO_5X2 ? 1 : 0] };
 }
 const chipOnde = (o) => o ? `<span class="esc-chip g-${o.g}">${esc(o.txt)}${o.horas ? ` <small>${o.horas}</small>` : ''}</span>` : '';
 
