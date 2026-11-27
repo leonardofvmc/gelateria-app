@@ -171,15 +171,15 @@ const ESC_COD = {
   P: ['prod', 'Produção', ['10:15–18:35', '10:15–20:03']],
   C: ['gelateria', 'Gelateria · folga da Clara', null],
   T: ['gelateria', 'Treinamento na gelateria', null],
-  M: ['manut', 'Manutenção da pousada', ['13:40–22:00', '12:12–22:00']],
-  M1: ['manut', 'Manutenção da pousada', ['13:00–21:20', '12:12–22:00']],
+  M: ['manut', 'Manutenção da pousada', ['13:40–22:00', '13:40–23:28']],
+  M1: ['manut', 'Manutenção da pousada', ['13:00–21:20', '13:00–22:48']],
   M6: ['manut', 'Manutenção da pousada', ['06:00–14:20', '06:00–15:48']],
   L: ['livre', 'A definir', ['', '']],
   F: ['folga', 'Folga', ['', '']],
 };
-// no dia em que cobre a Clara, faz o horário dela: 5x1 13:00–21:30 (seg–qui) / 13:00–22:00 (sex–dom); 5x2 12:12–22:00
+// no dia em que cobre a Clara, faz o horário dela: 5x1 13:00–21:30 (seg–qui) / 13:00–22:00 (sex–dom); 5x2 13:00–22:48
 const horaGelateria = (iso) => {
-  if (iso >= INICIO_5X2) return '12:12–22:00';
+  if (iso >= INICIO_5X2) return '13:00–22:48';
   const w = new Date(iso + 'T12:00:00').getDay(); return (w === 5 || w === 6 || w === 0) ? '13:00–22:00' : '13:00–21:30';
 };
 function ondeEstou(iso) {
