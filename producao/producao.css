@@ -115,3 +115,23 @@ html, body { overflow-x: hidden; }
 .matur-l { display: flex; justify-content: space-between; gap: 10px; padding: 7px 0; border-top: 1px solid rgba(127,127,127,.25); }
 .matur-l b { white-space: nowrap; }
 .ag-onde { flex-basis: 100%; display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; color: var(--ink2); }
+
+/* abas Produção | Vitrine & estoque */
+.seg.abas { margin: 0 0 12px; }
+/* vitrine & estoque */
+details.vit-bl { padding: 0 14px; }
+details.vit-bl > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 10px; padding: 14px 0; font-weight: 800; font-size: 17px; }
+details.vit-bl > summary::-webkit-details-marker { display: none; }
+details.vit-bl > summary .vit-tit { flex: 1; }
+details.vit-bl > summary .vit-tit::before { content: '＋ '; color: var(--ink2, #888); }
+details.vit-bl[open] > summary .vit-tit::before { content: '－ '; }
+.vit-tot { font-size: 14px; padding: 2px 10px; border-radius: 99px; background: rgba(127,127,127,.18); white-space: nowrap; }
+.vit-l { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; align-items: center; padding: 10px 0; border-top: 1px solid rgba(127,127,127,.25); }
+.vit-n b { display: block; }
+.vit-n small { display: block; }
+.vit-q { font-weight: 800; white-space: nowrap; }
+.vit-b { grid-column: 1 / -1; display: flex; gap: 8px; flex-wrap: wrap; }
+.vit-b .btn { min-width: 44px; }
+.vit-add { display: grid; grid-template-columns: 80px 1fr; gap: 8px; padding: 10px 0 14px; border-top: 1px solid rgba(127,127,127,.25); align-items: center; }
+.vit-add select { grid-column: 1 / -1; }
+.vit-add .inp { margin: 0; }

@@ -516,3 +516,9 @@ select.esc-chip option { color: #222; background: #fff; }
 .esc-dia > span { min-width: 0; }
 .esc-dia .esc-chip { white-space: normal; flex-wrap: wrap; column-gap: 5px; row-gap: 0; }
 .esc-dia select.esc-chip { width: 100%; white-space: nowrap; }
+
+details.esc-sem > summary.esc-sem-h { cursor: pointer; list-style: none; margin-bottom: 0; padding-bottom: 6px; }
+details.esc-sem > summary.esc-sem-h::-webkit-details-marker { display: none; }
+details.esc-sem > summary.esc-sem-h b::before { content: '＋ '; color: var(--ink2); }
+details.esc-sem[open] > summary.esc-sem-h b::before { content: '－ '; }
+details.esc-sem[open] > summary.esc-sem-h { margin-bottom: 6px; }

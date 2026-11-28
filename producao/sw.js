@@ -2,7 +2,7 @@
    - arquivos estáticos desta pasta + css/fontes/ícones compartilhados: rede primeiro, cache offline
    - dados.bin: SEMPRE rede primeiro (só cai no cache se estiver sem internet)
    - nada fora desta pasta é guardado, exceto ../css/style.css, ../fonts/ e ../icons/ */
-const CACHE = 'producao-v19';
+const CACHE = 'producao-v20';
 const BASE = new URL('./', self.location).pathname;      // .../producao/
 const PAI = new URL('../', self.location).pathname;      // pasta do app (um nível acima)
 const FILES = [

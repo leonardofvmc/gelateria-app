@@ -18,7 +18,7 @@ const parseNum = (v) => { const n = parseFloat(String(v).replace(',', '.')); ret
 const LOTE_PADRAO = 6;
 
 /* ---------- armazenamento local (tudo dentro de try: aba anônima / cheio) ---------- */
-const K = { chave: 'prod_chave', cfg: 'prod_cfg', cfgDev: 'prod_cfg_dev', estado: 'prod_estado', tema: 'prod_tema', agenda: 'prod_agenda', agendaDev: 'prod_agenda_dev', feitos: 'prod_feitos', pend: 'prod_pend', disp: 'prod_disp' };
+const K = { chave: 'prod_chave', cfg: 'prod_cfg', cfgDev: 'prod_cfg_dev', estado: 'prod_estado', tema: 'prod_tema', agenda: 'prod_agenda', agendaDev: 'prod_agenda_dev', feitos: 'prod_feitos', pend: 'prod_pend', disp: 'prod_disp', vitCache: 'prod_vit_cache', vitPend: 'prod_vit_pend' };
 const lsGet = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
 const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* segue sem gravar */ } };
 const lsDel = (k) => { try { localStorage.removeItem(k); } catch (e) { /* ok */ } };
@@ -81,13 +81,16 @@ async function decifrar(raw, env) {
 /* ---------- estado em memória ---------- */
 let envelope = null;     // conteúdo de dados.bin (cifrado)
 let dados = null;        // receitas decifradas (só em memória)
+let envVit = null;       // vitrine.bin (cifrado): só id/nome/grupo dos sabores, para o acesso da atendente
+let vitDados = null;     // { receitas:[{id,nome,grupo}] } decifrado — acesso "só vitrine"
+let papel = '';          // 'prod' = produção + vitrine (auxiliar e gerente) · 'vit' = só vitrine (atendente)
 let cfg = null;          // { id: { visivel, nome } }
 let cfgFonte = '';       // 'rede' | 'salvo' | 'dev' | ''
 const filtro = { q: '', cat: 'Todos' };
 
 /* ---------- carga de dados.bin ---------- */
-async function carregarEnvelope() {
-  const r = await fetch('dados.bin', { cache: 'no-store' });
+async function carregarEnvelope(arq) {
+  const r = await fetch(arq || 'dados.bin', { cache: 'no-store' });
   if (!r.ok) throw new Error('HTTP ' + r.status);
   const env = JSON.parse(await r.text());
   if (!env || !env.ct || !env.iv || !env.salt || !env.iter || !Array.isArray(env.slots)) throw new Error('formato');
@@ -491,24 +494,34 @@ async function entrar() {
     erro.textContent = 'Não consegui carregar os dados. Verifique a internet e tente de novo.';
     return;
   }
-  let raw;
+  let raw, kek = null;
   try {
-    raw = await abrirSlot(await derivarBits(senha, envelope), envelope);
-    dados = await decifrar(raw, envelope);
+    kek = await derivarBits(senha, envelope);
+    raw = await abrirSlot(kek, envelope);
+    dados = await decifrar(raw, envelope); papel = 'prod';
   } catch (e) {
     dados = null;
-    btn.disabled = false; btn.textContent = 'Entrar';
-    erro.textContent = 'Senha incorreta';
-    const s = $('#senha'); if (s) { s.select(); s.focus(); }
-    return;
+    // não é senha da produção: tenta o acesso só da vitrine (atendente)
+    try {
+      envVit = envVit || await carregarEnvelope('vitrine.bin');
+      const kv = (kek && envVit.salt === envelope.salt && envVit.iter === envelope.iter) ? kek : await derivarBits(senha, envVit);
+      raw = await abrirSlot(kv, envVit);
+      vitDados = await decifrar(raw, envVit); papel = 'vit';
+    } catch (e2) {
+      vitDados = null; papel = '';
+      btn.disabled = false; btn.textContent = 'Entrar';
+      erro.textContent = 'Senha incorreta';
+      const s = $('#senha'); if (s) { s.select(); s.focus(); }
+      return;
+    }
   }
-  lsSet(K.chave, JSON.stringify({ k: b64e(raw), t: Date.now() }));   // vale 24 h (VALIDADE)
-  await abrir();
+  lsSet(K.chave, JSON.stringify({ k: b64e(raw), t: Date.now(), p: papel }));   // vale 24 h (VALIDADE)
+  if (papel === 'vit') { location.hash = '#/vitrine'; await abrirVit(); } else await abrir();
 }
 
 function sair() {
   lsDel(K.chave);
-  dados = null; envelope = null;
+  dados = null; envelope = null; vitDados = null; envVit = null; papel = '';
   location.hash = '#/';
   viewLogin();
 }
@@ -534,11 +547,19 @@ async function abrir() {
   if (dados && visual() !== antes) render();
   else if (dados) atualizarRodape();
   if (dados) sincronizarFeitos().then((m) => { if (m) renderAgenda(); reenviarPendentes(m === null); });
+  if (dados) vitReenviar();
+}
+// acesso só da vitrine (atendente): lista de sabores liberados + estoque/vitrine
+async function abrirVit() {
+  cfg = cfgSalva() || {}; cfgFonte = cfg ? 'salvo' : '';
+  render();
+  await Promise.all([carregarCfgBase(), vitLerTudo()]);
+  if (vitDados) render();
 }
 
 /* ============================================================ LISTA */
 function viewHome() {
-  const inner = `
+  const inner = `${abas('prod')}
     <h2 class="sect" style="margin-top:4px">📅 Programação da semana</h2>
     <div id="hojeOnde"></div>
     <div id="agenda"></div>
@@ -553,7 +574,7 @@ function viewHome() {
     <p class="muted small" id="rodape" style="text-align:center"></p>`;
   app().innerHTML = chrome('La Maddalena · Produção', inner, {
     actions: `<button class="tb-btn" id="sairBtn" title="sair" aria-label="sair">${ICON.sair}</button>` });
-  bindChrome();
+  bindChrome(); bindAbas();
   // atualiza só a lista: a caixa de busca não é recriada, então o teclado não some
   $('#q').oninput = (e) => { filtro.q = e.target.value; renderItens(); };
   $('#segCat').onclick = (e) => {
@@ -579,6 +600,8 @@ function viewHome() {
     salvarFeitosAg();
     renderAgenda();
     enviarDia(iso);
+    const pk = k.split('|');
+    if (pk[1] === 'bater') vitBaterSeguro(pk.slice(2).join('|'), iso, e.target.checked);
   };
 }
 
@@ -838,10 +861,235 @@ function viewRecipe(id, soTimer) {   // soTimer: tela do "Bater o gelato" — s�
   };
 }
 
+/* ============================================================ VITRINE & ESTOQUE */
+/* Contado por CUBA. Cada gelato marcado em "Bater o gelato" entra no estoque (freezer) com 3 cubas,
+   na data daquele dia. Um documento por sabor em producaoVitrine/{id}: est (estoque) e vit (vitrine)
+   são listas [{ d:'AAAA-MM-DD', n:cubas, k? }] (k = 'b:AAAA-MM-DD' quando veio de um gelato batido);
+   aut = dias de "bater" já lançados (não lança duas vezes). Retiradas saem sempre das cubas mais antigas.
+   Gravação com conferência de versão (updateTime): se outra pessoa gravou no meio, lê de novo e refaz. */
+const VIT_URL = 'https://firestore.googleapis.com/v1/projects/gelateria-la-maddalena/databases/(default)/documents/producaoVitrine';
+const CUBAS_POR_LOTE = 3;
+const vitAbertos = new Set();          // blocos abertos (por padrão, recolhidos)
+let vitDocs = (() => { try { const o = JSON.parse(lsGet(K.vitCache) || '{}'); return o && typeof o === 'object' ? o : {}; } catch (e) { return {}; } })();
+let vitFonte = '';
+const vitLocal = () => location.hostname === 'localhost' && !lsGet('prod_sync_teste');   // testes locais: só no aparelho
+const vitSalvarCache = () => lsSet(K.vitCache, JSON.stringify(vitDocs));
+const porData = (a, b) => (a.d < b.d ? -1 : a.d > b.d ? 1 : 0);
+async function fetchT(url, opts, ms) {
+  const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), ms || 10000);
+  try { return await fetch(url, Object.assign({ signal: ctl.signal, cache: 'no-store' }, opts || {})); } finally { clearTimeout(t); }
+}
+function vitLimpa(a) {
+  return (Array.isArray(a) ? a : []).filter((e) => e && /^\d{4}-\d{2}-\d{2}$/.test(e.d) && Number.isInteger(e.n) && e.n > 0 && e.n <= 99)
+    .map((e) => (typeof e.k === 'string' && /^b:\d{4}-\d{2}-\d{2}$/.test(e.k) ? { d: e.d, n: e.n, k: e.k } : { d: e.d, n: e.n }));
+}
+function vitParse(doc) {
+  const f = (doc && doc.fields) || {};
+  const js = (x) => { try { return JSON.parse((f[x] && f[x].stringValue) || '[]'); } catch (e) { return []; } };
+  const aut = js('aut');
+  return { est: vitLimpa(js('est')), vit: vitLimpa(js('vit')),
+    aut: (Array.isArray(aut) ? aut : []).filter((x) => /^\d{4}-\d{2}-\d{2}$/.test(x)), upd: (doc && doc.updateTime) || null };
+}
+function vitNormaliza(d) {
+  const junta = (a) => {
+    const m = {}, out = [];
+    a.filter((e) => e.n > 0).forEach((e) => {
+      const kk = e.d + '|' + (e.k || '');
+      if (m[kk]) m[kk].n += e.n; else { m[kk] = e.k ? { d: e.d, n: e.n, k: e.k } : { d: e.d, n: e.n }; out.push(m[kk]); }
+    });
+    return out.sort(porData).slice(-40);
+  };
+  d.est = junta(d.est); d.vit = junta(d.vit);
+  const lim = isoLocal(new Date(Date.now() - 60 * 86400000));
+  d.aut = [...new Set(d.aut)].filter((x) => x >= lim).sort().slice(-60);
+}
+// tira n cubas, das mais antigas; devolve quantas conseguiu tirar
+function vitTira(lista, n) {
+  lista.sort(porData);
+  let falta = n;
+  for (const e of lista) { if (falta <= 0) break; const q = Math.min(e.n, falta); e.n -= q; falta -= q; }
+  return n - falta;
+}
+async function vitLerTudo() {
+  if (vitLocal()) { vitFonte = 'local'; return true; }
+  const out = {}; let tok = '';
+  try {
+    for (let i = 0; i < 5; i++) {
+      const r = await fetchT(VIT_URL + '?pageSize=300&key=' + FEITOS_KEY + (tok ? '&pageToken=' + encodeURIComponent(tok) : ''));
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const j = await r.json();
+      (j.documents || []).forEach((d) => { out[String(d.name || '').split('/').pop()] = vitParse(d); });
+      tok = j.nextPageToken || ''; if (!tok) break;
+    }
+    vitDocs = out; vitSalvarCache(); vitFonte = 'rede'; return true;
+  } catch (e) { vitFonte = 'salvo'; return false; }
+}
+async function vitLerUm(id) {
+  const r = await fetchT(VIT_URL + '/' + encodeURIComponent(id) + '?key=' + FEITOS_KEY);
+  if (r.status === 404) return { est: [], vit: [], aut: [], upd: null };
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  return vitParse(await r.json());
+}
+async function vitMudar(id, fn) {
+  if (!/^[a-z0-9-]{1,80}$/.test(id)) throw new Error('sabor inválido');
+  if (vitLocal()) {
+    const d = JSON.parse(JSON.stringify(vitDocs[id] || { est: [], vit: [], aut: [], upd: null }));
+    fn(d); vitNormaliza(d); vitDocs[id] = d; vitSalvarCache(); return;
+  }
+  for (let i = 0; i < 5; i++) {
+    const d = await vitLerUm(id);
+    fn(d); vitNormaliza(d);
+    const pre = d.upd ? 'currentDocument.updateTime=' + encodeURIComponent(d.upd) : 'currentDocument.exists=false';
+    const body = { fields: { est: { stringValue: JSON.stringify(d.est) }, vit: { stringValue: JSON.stringify(d.vit) },
+      aut: { stringValue: JSON.stringify(d.aut) }, atualizadoEm: { stringValue: new Date().toISOString() } } };
+    const r = await fetchT(VIT_URL + '/' + id + '?key=' + FEITOS_KEY + '&' + pre,
+      { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (r.ok) { const j = await r.json(); d.upd = j.updateTime || null; vitDocs[id] = d; vitSalvarCache(); return; }
+    if (r.status === 403) throw new Error('sem permissão');
+    // 400/409/412: alguém gravou no meio — lê de novo e refaz
+  }
+  throw new Error('conflito');
+}
+async function vitOp(id, op, n) {
+  const hoje = isoLocal(new Date());
+  await vitMudar(id, (d) => {
+    if (op === 'est+') d.est.push({ d: hoje, n });
+    else if (op === 'est-') vitTira(d.est, n);
+    else if (op === 'vit+') d.vit.push({ d: hoje, n });
+    else if (op === 'vit-') vitTira(d.vit, n);
+    else if (op === 'mover') { const q = vitTira(d.est, n); if (q) d.vit.push({ d: hoje, n: q }); }
+  });
+}
+// gelato batido: entra no estoque; desmarcado: sai o que ainda restar daquele lote no estoque
+async function vitBater(id, iso, on) {
+  await vitMudar(id, (d) => {
+    const k = 'b:' + iso;
+    if (on) { if (!d.aut.includes(iso)) { d.aut.push(iso); d.est.push({ d: iso, n: CUBAS_POR_LOTE, k }); } }
+    else if (d.aut.includes(iso)) { d.aut = d.aut.filter((x) => x !== iso); d.est.forEach((e) => { if (e.k === k) e.n = 0; }); }
+  });
+}
+const vitPendentes = () => { try { const a = JSON.parse(lsGet(K.vitPend) || '[]'); return Array.isArray(a) ? a : []; } catch (e) { return []; } };
+async function vitBaterSeguro(id, iso, on) {
+  try { await vitBater(id, iso, on); }
+  catch (e) {                         // sem internet: guarda e manda depois
+    const a = vitPendentes().filter((x) => !(x.id === id && x.iso === iso)); a.push({ id, iso, on: !!on });
+    lsSet(K.vitPend, JSON.stringify(a.slice(-100)));
+  }
+}
+async function vitReenviar() {
+  const a = vitPendentes(); if (!a.length) return;
+  const resto = [];
+  for (const x of a) { try { await vitBater(x.id, x.iso, x.on); } catch (e) { resto.push(x); } }
+  lsSet(K.vitPend, JSON.stringify(resto));
+}
+window.addEventListener('online', () => { if (dados) vitReenviar(); });
+
+function abas(atual) {
+  return `<div class="seg abas" id="abas"><button data-aba="#/" class="${atual === 'prod' ? 'on' : ''}">🧑‍🍳 Produção</button><button data-aba="#/vitrine" class="${atual === 'vit' ? 'on' : ''}">🍨 Vitrine & estoque</button></div>`;
+}
+function bindAbas() {
+  const a = $('#abas');
+  if (a) a.onclick = (e) => { const b = e.target.closest('button'); if (b && b.dataset.aba && location.hash !== b.dataset.aba) location.hash = b.dataset.aba; };
+}
+// só os sabores liberados pelo gerente (sem os preparos de insumo)
+function saboresVit() {
+  const base = dados ? dados.receitas : (vitDados ? vitDados.receitas : []);
+  return base.filter((r) => r.grupo !== 'Insumo' && cfg && cfg[r.id] && cfg[r.id].visivel === true)
+    .map((r) => ({ id: r.id, nome: (cfg[r.id].nome || '').trim() || r.nome }))
+    .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+}
+function viewVitrine() {
+  const ehProd = papel !== 'vit' && !!dados;
+  const inner = `${ehProd ? abas('vit') : ''}
+    <h2 class="sect" style="margin-top:4px">🍨 Vitrine & estoque</h2>
+    <p class="muted small" style="margin-top:-4px">Contado por cuba. Cada gelato batido entra no estoque com ${CUBAS_POR_LOTE} cubas. Toque num bloco para abrir.</p>
+    <div id="vitBox"></div>
+    <p class="muted small" id="vitMsg" role="status" style="text-align:center;min-height:1.2em"></p>`;
+  app().innerHTML = chrome(ehProd ? 'La Maddalena · Produção' : 'La Maddalena · Vitrine', inner, {
+    actions: `<button class="tb-btn" id="sairBtn" title="sair" aria-label="sair">${ICON.sair}</button>` });
+  bindChrome(); bindAbas();
+  const box = $('#vitBox');
+  const msg = (t) => { const m = $('#vitMsg'); if (m) m.textContent = t; };
+  box.addEventListener('toggle', (e) => {
+    const k = e.target.dataset && e.target.dataset.vbl;
+    if (k) { if (e.target.open) vitAbertos.add(k); else vitAbertos.delete(k); }
+  }, true);
+  box.onclick = async (e) => {
+    const b = e.target.closest('button'); if (!b || b.disabled) return;
+    let id, op, n = 1;
+    if (b.dataset.op) { id = b.dataset.id; op = b.dataset.op; }
+    else if (b.dataset.addbtn) {
+      const c = b.dataset.addbtn;
+      id = box.querySelector(`[data-addsel="${c}"]`).value;
+      n = Math.round(parseNum(box.querySelector(`[data-addn="${c}"]`).value));
+      if (!id) { msg('Escolha o sabor.'); return; }
+      if (!(n >= 1 && n <= 30)) { msg('Quantidade de 1 a 30 cubas.'); return; }
+      op = c + '+';
+    } else return;
+    $$('#vitBox button').forEach((x) => { x.disabled = true; });
+    msg('Salvando…');
+    try { await vitOp(id, op, n); msg('Salvo ✓'); }
+    catch (err) { msg('Não salvou (sem internet?). Tente de novo.'); }
+    renderVit();
+  };
+  renderVit();
+  vitLerTudo().then(() => renderVit());
+}
+function renderVit() {
+  const box = $('#vitBox'); if (!box) return;
+  const sab = saboresVit(), hoje = isoLocal(new Date()), t0 = Date.parse(hoje + 'T00:00:00');
+  const dias = (d) => Math.max(0, Math.round((t0 - Date.parse(d + 'T00:00:00')) / 86400000));
+  const pd = (n) => (n === 1 ? '1 dia' : n + ' dias');
+  const bloco = (campo, titulo, onde) => {
+    let tot = 0;
+    const linhas = sab.map((s) => {
+      const lista = ((vitDocs[s.id] || {})[campo] || []).filter((e) => e.n > 0);
+      const n = lista.reduce((a, e) => a + e.n, 0);
+      if (!n) return '';                     // sabor sem cuba aqui: não aparece
+      tot += n;
+      const g = {}; lista.forEach((e) => { g[e.d] = (g[e.d] || 0) + e.n; });
+      const ds = Object.keys(g).sort();
+      const tempo = ds.length === 1 ? `${onde} há ${pd(dias(ds[0]))}`
+        : ds.map((d) => `${g[d]} cuba${g[d] === 1 ? '' : 's'} ${onde} há ${pd(dias(d))}`).join(' · ');
+      return `<div class="vit-l">
+        <div class="vit-n"><b>${esc(s.nome)}</b><small class="muted">${tempo}</small></div>
+        <div class="vit-q">${n} cuba${n === 1 ? '' : 's'}</div>
+        <div class="vit-b">
+          <button class="btn sec mini" data-op="${campo}-" data-id="${esc(s.id)}" aria-label="tirar 1 cuba de ${esc(s.nome)}">−</button>
+          <button class="btn sec mini" data-op="${campo}+" data-id="${esc(s.id)}" aria-label="pôr 1 cuba de ${esc(s.nome)}">＋</button>
+          ${campo === 'est' ? `<button class="btn mini" data-op="mover" data-id="${esc(s.id)}" aria-label="levar 1 cuba de ${esc(s.nome)} para a vitrine">→ Vitrine</button>` : ''}
+        </div></div>`;
+    }).join('');
+    const add = sab.length ? `<div class="vit-add">
+        <select class="inp" data-addsel="${campo}" aria-label="sabor para adicionar"><option value="">＋ Adicionar sabor…</option>${sab.map((s) => `<option value="${esc(s.id)}">${esc(s.nome)}</option>`).join('')}</select>
+        <input class="inp" type="number" inputmode="numeric" min="1" max="30" value="${campo === 'est' ? CUBAS_POR_LOTE : 1}" data-addn="${campo}" aria-label="cubas">
+        <button class="btn sec" data-addbtn="${campo}">Adicionar</button></div>` : '';
+    return `<details class="card vit-bl" data-vbl="${campo}" ${vitAbertos.has(campo) ? 'open' : ''}>
+      <summary><span class="vit-tit">${titulo}</span><span class="vit-tot">${tot} cuba${tot === 1 ? '' : 's'}</span></summary>
+      ${linhas || '<p class="muted small" style="margin:8px 0">Nenhuma cuba aqui.</p>'}${add}</details>`;
+  };
+  box.innerHTML = (sab.length ? '' : '<div class="card"><p style="margin:0">Nenhum sabor liberado ainda pelo gerente.</p></div>')
+    + bloco('est', '🧊 Estoque (freezer)', 'no freezer') + bloco('vit', '🍨 Vitrine', 'na vitrine')
+    + (vitFonte === 'salvo' ? '<p class="muted small" style="text-align:center">Sem internet: mostrando a última leitura.</p>' : '');
+}
+// mantém a tela em dia (a cada 20 s), sem atrapalhar quem está escolhendo um sabor
+setInterval(() => {
+  const box = $('#vitBox');
+  if (!box || document.hidden || box.contains(document.activeElement) || $$('#vitBox button[disabled]').length) return;
+  const antes = JSON.stringify(vitDocs);
+  vitLerTudo().then(() => { if (JSON.stringify(vitDocs) !== antes && $('#vitBox')) renderVit(); });
+}, 20000);
+document.addEventListener('visibilitychange', async () => {
+  if (document.visibilityState !== 'visible' || !$('#vitBox')) return;
+  if (papel === 'vit') await carregarCfgBase();
+  await vitLerTudo(); renderVit();
+});
+
 /* ============================================================ ROTAS */
 function render() {
-  if (!dados) { viewLogin(); return; }
+  if (!dados && !vitDados) { viewLogin(); return; }
   const h = (location.hash || '#/').split('?')[0];
+  if (!dados || papel === 'vit' || h === '#/vitrine') { viewVitrine(); window.scrollTo(0, 0); return; }
   const m = h.match(/^#\/r\/(.+)$/);
   const mb = h.match(/^#\/bater\/(.+)$/);
   if (mb) { let id = mb[1]; try { id = decodeURIComponent(id); } catch (e) { /* mantém */ } viewRecipe(id, true); }
@@ -865,13 +1113,13 @@ const VALIDADE = 24 * 60 * 60 * 1000;
 function chaveValida() {
   try {
     const o = JSON.parse(lsGet(K.chave) || 'null');
-    if (o && typeof o.k === 'string' && typeof o.t === 'number' && Date.now() - o.t < VALIDADE && Date.now() >= o.t) return o.k;
+    if (o && typeof o.k === 'string' && typeof o.t === 'number' && Date.now() - o.t < VALIDADE && Date.now() >= o.t) { papel = o.p === 'vit' ? 'vit' : 'prod'; return o.k; }
   } catch (e) { /* formato antigo ou inválido */ }
   lsDel(K.chave);
   return null;
 }
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible' && dados && !chaveValida()) sair();
+  if (document.visibilityState === 'visible' && (dados || vitDados) && !chaveValida()) sair();
 });
 async function iniciar() {
   const tinha = !!lsGet(K.chave);
@@ -879,14 +1127,15 @@ async function iniciar() {
   if (!guardada && tinha) { viewLogin('Por segurança, digite a senha de novo (vale 24 horas).'); return; }
   if (guardada && window.crypto && crypto.subtle) {
     try {
-      envelope = await carregarEnvelope();
-      dados = await decifrar(b64d(guardada), envelope);
+      if (papel === 'vit') { envVit = await carregarEnvelope('vitrine.bin'); vitDados = await decifrar(b64d(guardada), envVit); }
+      else { envelope = await carregarEnvelope(); dados = await decifrar(b64d(guardada), envelope); }
     } catch (e) {
       // chave não serve mais (senha ou arquivo mudou) ou sem rede: volta ao login
-      if (envelope) lsDel(K.chave);
-      dados = null;
+      if (envelope || envVit) lsDel(K.chave);
+      dados = null; vitDados = null;
     }
     if (dados) { await abrir(); return; }
+    if (vitDados) { await abrirVit(); return; }
   }
   viewLogin();
 }
